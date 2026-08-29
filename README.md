@@ -111,6 +111,16 @@ EDITION_LANGUAGE=ru
 
 The fallback ranks stories deterministically using importance, recommendation status, and freshness, then applies the same topic balance and lightweight same-source duplicate avoidance. Its overview is assembled from already validated article summaries, so it remains readable even when the editorial model is unavailable; Russian editions receive a Russian morning lead-in. Each saved edition records the configured editorial model, editorial prompt version, and whether selection came from the LLM or fallback.
 
+## EPUB rendering
+
+The EPUB renderer builds a newspaper-style hierarchy with a Morning Brief, Top Stories, repeated-topic sections when useful, and Other Headlines for the remaining selected stories. Each story includes source attribution, publication time, estimated reading time, summary, importance context, key facts, and the original source URL. `INCLUDE_FULL_ARTICLES` continues to control whether sanitized article text is embedded after the summary.
+
+Rendering assets live under `src/rendering/assets/`: monochrome-friendly CSS controls typography and page breaks, while a metadata file supplies the stable author/publisher identity. Every EPUB carries a title, edition date, language, publisher/author, and deterministic `urn:ai-news-assistant:edition:YYYY-MM-DD` identifier. Pandoc is run with `SOURCE_DATE_EPOCH` pinned to the edition date so identical input produces identical EPUB bytes.
+
+The initial image policy is deliberately **no images**. The renderer never downloads or embeds remote images, keeping morning editions offline-friendly, compact, and predictable on e-ink devices. A future renderer may add one bounded lead image per selected article without changing the renderer interface.
+
+Pandoc writes only to a staging directory. The staged file must exist and be non-empty before any public file is replaced; dated EPUBs, `latest.epub`, and `latest.json` are then published through same-directory temporary files plus atomic renames. A failed Pandoc invocation or missing/empty output therefore leaves the previous `latest.epub` untouched. `latest.json` records the EPUB hash, renderer version, image policy, language, identifier, story count, and full-text policy. The pipeline depends on the `EditionRenderer` abstraction, with `PandocEpubRenderer` as the default implementation.
+
 ## Run one morning edition
 
 ```bash
@@ -167,7 +177,7 @@ tests/           lightweight Node test runner tests
 
 ## Current limitations
 
-This remains an architectural skeleton rather than a complete production service. Before unattended use beyond the current ingestion, storage, LLM, and editorial-selection scope, add EPUB/rendering hardening, broader integration tests, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
+This remains an architectural skeleton rather than a complete production service. Before unattended use beyond the current ingestion, storage, LLM, editorial-selection, and EPUB-rendering scope, add production HTTP delivery/scheduling, broader integration tests, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
 
 ## Agent task plan
 

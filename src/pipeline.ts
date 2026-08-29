@@ -6,12 +6,18 @@ import { analyzeArticle, articleAnalysisIdentity } from "./llm/article-analysis.
 import { selectEditorialPlan } from "./llm/editorial.js";
 import type { LlmProvider } from "./llm/provider.js";
 import { logger } from "./logging.js";
-import { renderEpub } from "./rendering/epub.js";
+import { PandocEpubRenderer } from "./rendering/epub.js";
+import type { EditionRenderer } from "./rendering/renderer.js";
 import type { NewsSource } from "./sources/source.js";
 import { NewsDatabase } from "./storage/sqlite.js";
 import type { EditionArticle, EditionResult } from "./types.js";
 
-export async function runPipeline(config: AppConfig, source: NewsSource, llm: LlmProvider): Promise<EditionResult> {
+export async function runPipeline(
+  config: AppConfig,
+  source: NewsSource,
+  llm: LlmProvider,
+  renderer: EditionRenderer = new PandocEpubRenderer()
+): Promise<EditionResult> {
   const log = logger.child({ component: "pipeline", sourceId: source.id });
   const db = new NewsDatabase(config.dataDir);
   const runStartedAt = new Date();
@@ -109,7 +115,7 @@ export async function runPipeline(config: AppConfig, source: NewsSource, llm: Ll
     return entry ? [entry] : [];
   });
   const editionDate = new Date().toISOString().slice(0, 10);
-  const rendered = await renderEpub(config, editionDate, plan, selected);
+  const rendered = await renderer.render({ config, editionDate, plan, selected });
   db.saveEdition(editionDate, plan, rendered.epubPath, editorial.metadata);
   const checkpoint = db.recordSourceRunCompletion(
     source.id,
