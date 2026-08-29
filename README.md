@@ -127,10 +127,22 @@ Pandoc writes only to a staging directory. The staged file must exist and be non
 npm run dev -- run
 ```
 
+Only one pipeline run can hold the `DATA_DIR/pipeline.lock` file at a time. A second concurrent `run` logs that another run is active and exits successfully without fetching or generating duplicate work. Stale lock files left by a dead process are recovered automatically.
+
+After a successful run, dated EPUBs and build directories are pruned according to:
+
+```dotenv
+EDITION_RETENTION_DAYS=30
+BUILD_RETENTION_DAYS=7
+```
+
+Retention never removes `news.sqlite` or its article/analysis history, and cleanup failures do not invalidate an otherwise successful edition.
+
 Expected outputs:
 
 ```text
 data/news.sqlite
+data/run-status.json
 data/public/daily/YYYY-MM-DD.epub
 data/public/daily/latest.epub
 data/public/daily/latest.json
@@ -150,16 +162,21 @@ GET /daily/latest.json
 GET /daily/latest.epub
 ```
 
-Default bind is `0.0.0.0:8787`.
+`/healthz` reports safe operational state: delivery-server health, whether the latest EPUB/manifest are present, the latest edition date, last successful pipeline timestamp, last attempt status, and a safe failure code. A failed morning run marks health as degraded while the HTTP service remains available to serve the previous successful `latest.epub`.
 
-## Production shape
+The server accepts `SIGTERM`/`SIGINT` and stops accepting requests gracefully before exiting. Default bind is `0.0.0.0:8787`; for deployment, prefer a private LAN address or firewall-restricted LAN exposure.
 
-The intended home-server deployment is two systemd units:
+## Home-server operations
 
-1. a long-running delivery server;
-2. a timer that runs the pipeline around 06:00 each morning.
+Ready-to-customize systemd examples live in [`ops/systemd/`](ops/systemd/):
 
-Task 00 keeps configuration systemd-friendly by letting service-provided environment variables take precedence over a local `.env`. The exact systemd deployment remains intentionally deferred to [`plans/06-http-delivery-scheduling.md`](plans/06-http-delivery-scheduling.md).
+1. `ai-news-assistant-serve.service` runs HTTP delivery continuously;
+2. `ai-news-assistant-run.service` is the one-shot morning generator;
+3. `ai-news-assistant-run.timer` schedules generation from 06:00 with up to 30 minutes of randomized delay.
+
+The unit examples use explicit absolute paths and an external `/etc/ai-news-assistant.env`; no API key is embedded in committed units. See [`ops/systemd/README.md`](ops/systemd/README.md) for installation, schedule overrides, LAN/firewall assumptions, `journalctl` commands, manual reruns, retention, and emergency rollback instructions.
+
+Do not expose the unauthenticated delivery port directly to the public internet. If access beyond the trusted LAN is required, use a private VPN or a reverse proxy that provides TLS and authentication.
 
 ## Project layout
 
@@ -171,13 +188,15 @@ src/
   llm/           provider boundary and prompts
   rendering/     EPUB generation
   delivery/      local HTTP delivery
+  operations/    run locking, status, and retention
+ops/systemd/     home-server service/timer examples
 plans/           agent-ready implementation tasks
 tests/           lightweight Node test runner tests
 ```
 
 ## Current limitations
 
-This remains an architectural skeleton rather than a complete production service. Before unattended use beyond the current ingestion, storage, LLM, editorial-selection, and EPUB-rendering scope, add production HTTP delivery/scheduling, broader integration tests, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
+This remains a focused personal-server service rather than a general hosted news platform. Broader integration tests, additional source adapters, source-specific compliance work, and device-specific sync remain separate tasks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
 
 ## Agent task plan
 

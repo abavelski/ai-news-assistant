@@ -14,6 +14,8 @@ export interface AppConfig {
   editorialMaxPerTopic: number;
   editionLanguage: string;
   includeFullArticles: boolean;
+  editionRetentionDays: number;
+  buildRetentionDays: number;
   meduzaRssUrl: string;
   httpUserAgent: string;
   httpTimeoutMs: number;
@@ -150,6 +152,8 @@ export function parseConfig(env: Environment = process.env): AppConfig {
     editorialMaxPerTopic,
     editionLanguage: nonEmptyEnv(env, "EDITION_LANGUAGE", "ru"),
     includeFullArticles: booleanEnv(env, "INCLUDE_FULL_ARTICLES", true),
+    editionRetentionDays: integerEnv(env, "EDITION_RETENTION_DAYS", 30, 1, 3650),
+    buildRetentionDays: integerEnv(env, "BUILD_RETENTION_DAYS", 7, 1, 3650),
     meduzaRssUrl: httpUrlEnv(env, "MEDUZA_RSS_URL", "https://meduza.io/rss/all"),
     httpUserAgent: nonEmptyEnv(env, "HTTP_USER_AGENT", "ai-news-assistant/0.1 (+personal self-hosted reader)"),
     httpTimeoutMs: integerEnv(env, "HTTP_TIMEOUT_MS", 20_000, 1_000, 120_000),

@@ -1,0 +1,19 @@
+[Unit]
+Description=AI News Assistant morning edition generation
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ai-news-assistant
+Group=ai-news-assistant
+WorkingDirectory=/opt/ai-news-assistant
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/ai-news-assistant.env
+ExecStart=/usr/bin/node /opt/ai-news-assistant/dist/src/index.js run
+TimeoutStartSec=45min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ai-news-assistant

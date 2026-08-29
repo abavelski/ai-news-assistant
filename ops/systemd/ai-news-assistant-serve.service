@@ -1,0 +1,23 @@
+[Unit]
+Description=AI News Assistant HTTP delivery service
+After=network.target
+
+[Service]
+Type=simple
+User=ai-news-assistant
+Group=ai-news-assistant
+WorkingDirectory=/opt/ai-news-assistant
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/ai-news-assistant.env
+ExecStart=/usr/bin/node /opt/ai-news-assistant/dist/src/index.js serve
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ai-news-assistant
+
+[Install]
+WantedBy=multi-user.target

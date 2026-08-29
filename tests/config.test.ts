@@ -14,6 +14,8 @@ test("parseConfig uses safe defaults", () => {
   assert.equal(config.editionMaxArticles, 10);
   assert.equal(config.editorialMaxPerTopic, 3);
   assert.equal(config.includeFullArticles, true);
+  assert.equal(config.editionRetentionDays, 30);
+  assert.equal(config.buildRetentionDays, 7);
   assert.equal(config.llmBaseUrl, "http://127.0.0.1:11434");
   assert.equal(config.logLevel, "info");
   assert.equal(config.httpUserAgent, "ai-news-assistant/0.1 (+personal self-hosted reader)");
@@ -36,6 +38,8 @@ test("parseConfig parses explicit values", () => {
     OUTPUT_DIR: "./tmp-output",
     HOST: "127.0.0.1",
     PORT: "9999",
+    EDITION_RETENTION_DAYS: "45",
+    BUILD_RETENTION_DAYS: "14",
     LOOKBACK_HOURS: "48",
     MAX_ARTICLES: "80",
     EDITION_MAX_ARTICLES: "12",
@@ -63,6 +67,8 @@ test("parseConfig parses explicit values", () => {
 
   assert.equal(config.host, "127.0.0.1");
   assert.equal(config.port, 9999);
+  assert.equal(config.editionRetentionDays, 45);
+  assert.equal(config.buildRetentionDays, 14);
   assert.equal(config.lookbackHours, 48);
   assert.equal(config.maxArticles, 80);
   assert.equal(config.editionMaxArticles, 12);
@@ -126,6 +132,11 @@ test("parseConfig validates LLM request and prompt bounds", () => {
   assert.throws(() => parseConfig({ LLM_TIMEOUT_MS: "999" }), /LLM_TIMEOUT_MS must be an integer between 1000 and 600000/);
   assert.throws(() => parseConfig({ LLM_RETRIES: "6" }), /LLM_RETRIES must be an integer between 0 and 5/);
   assert.throws(() => parseConfig({ LLM_ARTICLE_MAX_CHARS: "999" }), /LLM_ARTICLE_MAX_CHARS must be an integer between 1000 and 100000/);
+});
+
+test("parseConfig validates retention windows", () => {
+  assert.throws(() => parseConfig({ EDITION_RETENTION_DAYS: "0" }), /EDITION_RETENTION_DAYS must be an integer between 1 and 3650/);
+  assert.throws(() => parseConfig({ BUILD_RETENTION_DAYS: "3651" }), /BUILD_RETENTION_DAYS must be an integer between 1 and 3650/);
 });
 
 test("assertPipelineConfig rejects an empty LLM_MODEL for run", () => {
