@@ -14,6 +14,12 @@ export interface AppConfig {
   editionLanguage: string;
   includeFullArticles: boolean;
   meduzaRssUrl: string;
+  httpUserAgent: string;
+  httpTimeoutMs: number;
+  httpRetries: number;
+  httpRetryBaseDelayMs: number;
+  articleFetchDelayMs: number;
+  minArticleChars: number;
   llmBaseUrl: string;
   llmModel: string;
   llmApiKey?: string;
@@ -115,6 +121,12 @@ export function parseConfig(env: Environment = process.env): AppConfig {
     editionLanguage: nonEmptyEnv(env, "EDITION_LANGUAGE", "ru"),
     includeFullArticles: booleanEnv(env, "INCLUDE_FULL_ARTICLES", true),
     meduzaRssUrl: httpUrlEnv(env, "MEDUZA_RSS_URL", "https://meduza.io/rss/all"),
+    httpUserAgent: nonEmptyEnv(env, "HTTP_USER_AGENT", "ai-news-assistant/0.1 (+personal self-hosted reader)"),
+    httpTimeoutMs: integerEnv(env, "HTTP_TIMEOUT_MS", 20_000, 1_000, 120_000),
+    httpRetries: integerEnv(env, "HTTP_RETRIES", 2, 0, 10),
+    httpRetryBaseDelayMs: integerEnv(env, "HTTP_RETRY_BASE_DELAY_MS", 500, 0, 30_000),
+    articleFetchDelayMs: integerEnv(env, "ARTICLE_FETCH_DELAY_MS", 250, 0, 10_000),
+    minArticleChars: integerEnv(env, "MIN_ARTICLE_CHARS", 200, 100, 10_000),
     llmBaseUrl: httpUrlEnv(env, "LLM_BASE_URL", "http://127.0.0.1:11434"),
     llmModel: readOptional(env, "LLM_MODEL") ?? "",
     llmApiKey: readOptional(env, "LLM_API_KEY") || undefined,

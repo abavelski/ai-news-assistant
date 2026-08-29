@@ -54,6 +54,24 @@ npm run dev -- doctor
 
 `doctor` does not fetch news. It verifies that the configured data and output directories are writable, that the LLM settings needed by `run` are present, and that Pandoc is available on `PATH`.
 
+## Meduza ingestion
+
+Meduza discovery is RSS-only. Feed and article requests use the same bounded timeout/retry policy, and article downloads are intentionally sequential with a small delay between requests. URL variants are normalized before discovery deduplication, while extraction prefers the page's canonical Meduza URL and publication metadata when available.
+
+The defaults in `.env.example` are conservative for a personal morning run:
+
+```dotenv
+MEDUZA_RSS_URL=https://meduza.io/rss/all
+HTTP_USER_AGENT="ai-news-assistant/0.1 (+personal self-hosted reader)"
+HTTP_TIMEOUT_MS=20000
+HTTP_RETRIES=2
+HTTP_RETRY_BASE_DELAY_MS=500
+ARTICLE_FETCH_DELAY_MS=250
+MIN_ARTICLE_CHARS=200
+```
+
+Transient network errors and HTTP 408/425/429/5xx responses are retried with bounded exponential backoff. Permanent HTTP failures and pages that do not yield enough article text are logged with their failure stage and skipped so one bad article does not abort an otherwise successful edition.
+
 ## Run one morning edition
 
 ```bash
@@ -110,7 +128,7 @@ tests/           lightweight Node test runner tests
 
 ## Current limitations
 
-This remains an architectural skeleton rather than a production-ready scraper. Before unattended use, add retries/backoff, stronger schema validation of LLM output, extraction fixtures, integration tests, rate limiting, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
+This remains an architectural skeleton rather than a complete production service. Before unattended use beyond the current Meduza ingestion scope, add stronger schema validation of LLM output, broader integration tests, safe versioned storage/checkpoint migrations, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
 
 ## Agent task plan
 

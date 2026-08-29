@@ -1,6 +1,7 @@
 import type { AppConfig } from "./config.js";
-import { ExtractionError } from "./errors.js";
+import { ExtractionError, FetchError } from "./errors.js";
 import { fetchAndExtract } from "./extraction/readability.js";
+import { sleep } from "./http.js";
 import { articleAnalysisPrompt, editorialPrompt } from "./llm/prompts.js";
 import { parseJsonObject, type LlmProvider } from "./llm/provider.js";
 import { logger } from "./logging.js";
@@ -36,9 +37,21 @@ export async function runPipeline(config: AppConfig, source: NewsSource, llm: Ll
   log.info("source discovery completed", { discoveredCount: discovered.length });
 
   const processed: EditionArticle[] = [];
-  for (const item of discovered) {
+  let failedCount = 0;
+  for (let index = 0; index < discovered.length; index += 1) {
+    const item = discovered[index];
+    if (!item) continue;
+    if (index > 0) await sleep(config.articleFetchDelayMs);
+
     try {
-      const extracted = await fetchAndExtract(item, config.editionLanguage);
+      const extracted = await fetchAndExtract(item, {
+        language: config.editionLanguage,
+        userAgent: config.httpUserAgent,
+        timeoutMs: config.httpTimeoutMs,
+        retries: config.httpRetries,
+        retryBaseDelayMs: config.httpRetryBaseDelayMs,
+        minArticleChars: config.minArticleChars
+      });
       const { article, needsAnalysis } = db.upsertArticle(extracted);
       let analysis = db.getAnalysis(article.id);
 
@@ -62,9 +75,17 @@ export async function runPipeline(config: AppConfig, source: NewsSource, llm: Ll
       }
       processed.push({ article, analysis });
     } catch (error) {
-      log.error("article processing failed", { url: item.url, error });
+      failedCount += 1;
+      const stage = error instanceof FetchError
+        ? "fetch"
+        : error instanceof ExtractionError
+          ? "extraction"
+          : "processing";
+      log.warn("article processing failed", { url: item.url, stage, error });
     }
   }
+
+  log.info("article processing completed", { processedCount: processed.length, failedCount });
 
   if (!processed.length) {
     throw new ExtractionError("No articles were successfully processed; no edition was generated.", {

@@ -15,6 +15,12 @@ test("parseConfig uses safe defaults", () => {
   assert.equal(config.includeFullArticles, true);
   assert.equal(config.llmBaseUrl, "http://127.0.0.1:11434");
   assert.equal(config.logLevel, "info");
+  assert.equal(config.httpUserAgent, "ai-news-assistant/0.1 (+personal self-hosted reader)");
+  assert.equal(config.httpTimeoutMs, 20_000);
+  assert.equal(config.httpRetries, 2);
+  assert.equal(config.httpRetryBaseDelayMs, 500);
+  assert.equal(config.articleFetchDelayMs, 250);
+  assert.equal(config.minArticleChars, 200);
 });
 
 test("parseConfig parses explicit values", () => {
@@ -29,6 +35,12 @@ test("parseConfig parses explicit values", () => {
     EDITION_LANGUAGE: "en",
     INCLUDE_FULL_ARTICLES: "off",
     MEDUZA_RSS_URL: "https://example.com/feed.xml",
+    HTTP_USER_AGENT: "fixture-agent/2.0",
+    HTTP_TIMEOUT_MS: "15000",
+    HTTP_RETRIES: "4",
+    HTTP_RETRY_BASE_DELAY_MS: "100",
+    ARTICLE_FETCH_DELAY_MS: "50",
+    MIN_ARTICLE_CHARS: "300",
     LLM_BASE_URL: "https://llm.example.test/",
     LLM_MODEL: "test-model",
     LLM_API_KEY: "secret",
@@ -42,6 +54,12 @@ test("parseConfig parses explicit values", () => {
   assert.equal(config.editionMaxArticles, 12);
   assert.equal(config.editionLanguage, "en");
   assert.equal(config.includeFullArticles, false);
+  assert.equal(config.httpUserAgent, "fixture-agent/2.0");
+  assert.equal(config.httpTimeoutMs, 15_000);
+  assert.equal(config.httpRetries, 4);
+  assert.equal(config.httpRetryBaseDelayMs, 100);
+  assert.equal(config.articleFetchDelayMs, 50);
+  assert.equal(config.minArticleChars, 300);
   assert.equal(config.llmBaseUrl, "https://llm.example.test");
   assert.equal(config.llmModel, "test-model");
   assert.equal(config.llmApiKey, "secret");
@@ -60,6 +78,21 @@ test("parseConfig rejects invalid booleans and cross-field article limits", () =
   assert.throws(
     () => parseConfig({ MAX_ARTICLES: "5", EDITION_MAX_ARTICLES: "6" }),
     /EDITION_MAX_ARTICLES \(6\) must not exceed MAX_ARTICLES \(5\)/
+  );
+});
+
+test("parseConfig validates ingestion timing and extraction ranges", () => {
+  assert.throws(
+    () => parseConfig({ HTTP_TIMEOUT_MS: "999" }),
+    /HTTP_TIMEOUT_MS must be an integer between 1000 and 120000/
+  );
+  assert.throws(
+    () => parseConfig({ HTTP_RETRIES: "11" }),
+    /HTTP_RETRIES must be an integer between 0 and 10/
+  );
+  assert.throws(
+    () => parseConfig({ MIN_ARTICLE_CHARS: "50" }),
+    /MIN_ARTICLE_CHARS must be an integer between 100 and 10000/
   );
 });
 
