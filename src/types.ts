@@ -21,7 +21,13 @@ export interface Article {
   fetchedAt: string;
 }
 
-export interface ArticleAnalysis {
+export interface AnalysisIdentity {
+  modelName: string;
+  promptVersion: string;
+  analysisVersion: string;
+}
+
+export interface ArticleAnalysis extends AnalysisIdentity {
   articleId: number;
   summary: string;
   topics: string[];
@@ -30,6 +36,10 @@ export interface ArticleAnalysis {
   reason: string;
   keyFacts: string[];
   analyzedAt: string;
+  latencyMs: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
 }
 
 export interface EditorialPlan {

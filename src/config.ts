@@ -23,6 +23,12 @@ export interface AppConfig {
   llmBaseUrl: string;
   llmModel: string;
   llmApiKey?: string;
+  llmTemperature: number;
+  llmMaxOutputTokens: number;
+  llmTimeoutMs: number;
+  llmRetries: number;
+  llmRetryBaseDelayMs: number;
+  llmArticleMaxChars: number;
   logLevel: LogLevel;
 }
 
@@ -49,6 +55,16 @@ function integerEnv(env: Environment, name: string, fallback: number, min: numbe
   const value = Number(raw);
   if (!Number.isSafeInteger(value) || value < min || value > max) {
     throw new ConfigurationError(`${name} must be an integer between ${min} and ${max}; received ${JSON.stringify(raw)}.`);
+  }
+  return value;
+}
+
+function numberEnv(env: Environment, name: string, fallback: number, min: number, max: number): number {
+  const raw = readOptional(env, name);
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new ConfigurationError(`${name} must be a number between ${min} and ${max}; received ${JSON.stringify(raw)}.`);
   }
   return value;
 }
@@ -130,6 +146,12 @@ export function parseConfig(env: Environment = process.env): AppConfig {
     llmBaseUrl: httpUrlEnv(env, "LLM_BASE_URL", "http://127.0.0.1:11434"),
     llmModel: readOptional(env, "LLM_MODEL") ?? "",
     llmApiKey: readOptional(env, "LLM_API_KEY") || undefined,
+    llmTemperature: numberEnv(env, "LLM_TEMPERATURE", 0.2, 0, 2),
+    llmMaxOutputTokens: integerEnv(env, "LLM_MAX_OUTPUT_TOKENS", 1_200, 64, 32_768),
+    llmTimeoutMs: integerEnv(env, "LLM_TIMEOUT_MS", 120_000, 1_000, 600_000),
+    llmRetries: integerEnv(env, "LLM_RETRIES", 2, 0, 5),
+    llmRetryBaseDelayMs: integerEnv(env, "LLM_RETRY_BASE_DELAY_MS", 500, 0, 30_000),
+    llmArticleMaxChars: integerEnv(env, "LLM_ARTICLE_MAX_CHARS", 28_000, 1_000, 100_000),
     logLevel: logLevelEnv(env)
   };
 }

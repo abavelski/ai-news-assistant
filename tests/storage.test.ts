@@ -4,8 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
+import { ARTICLE_ANALYSIS_VERSION } from "../src/llm/article-analysis.js";
+import { ARTICLE_ANALYSIS_PROMPT_VERSION } from "../src/llm/prompts.js";
 import { LATEST_SCHEMA_VERSION, NewsDatabase } from "../src/storage/sqlite.js";
-import type { Article, ArticleAnalysis } from "../src/types.js";
+import type { AnalysisIdentity, Article, ArticleAnalysis } from "../src/types.js";
 import { sha256 } from "../src/utils/hash.js";
 
 function article(overrides: Partial<Article> = {}): Article {
@@ -26,7 +28,13 @@ function article(overrides: Partial<Article> = {}): Article {
   };
 }
 
-function analysis(articleId: number): ArticleAnalysis {
+const identity: AnalysisIdentity = {
+  modelName: "model-a",
+  promptVersion: ARTICLE_ANALYSIS_PROMPT_VERSION,
+  analysisVersion: ARTICLE_ANALYSIS_VERSION
+};
+
+function analysis(articleId: number, overrides: Partial<ArticleAnalysis> = {}): ArticleAnalysis {
   return {
     articleId,
     summary: "summary",
@@ -35,7 +43,13 @@ function analysis(articleId: number): ArticleAnalysis {
     recommended: true,
     reason: "reason",
     keyFacts: ["fact"],
-    analyzedAt: "2026-08-29T08:06:00.000Z"
+    analyzedAt: "2026-08-29T08:06:00.000Z",
+    ...identity,
+    latencyMs: 123,
+    promptTokens: 100,
+    completionTokens: 20,
+    totalTokens: 120,
+    ...overrides
   };
 }
 
@@ -53,7 +67,7 @@ test("migrations initialize an empty database at the latest schema version", asy
     const db = new NewsDatabase(dataDir);
     try {
       assert.equal(db.getSchemaVersion(), LATEST_SCHEMA_VERSION);
-      assert.equal(LATEST_SCHEMA_VERSION, 2);
+      assert.equal(LATEST_SCHEMA_VERSION, 3);
     } finally {
       db.close();
     }
@@ -76,6 +90,24 @@ test("identical article upserts are idempotent and create one version", async ()
       assert.equal(db.getArticleVersions(first.article.id).length, 1);
       assert.equal(db.getArticleByUrl(canonicalized.article.url)?.id, first.article.id);
       assert.equal(db.getArticleByUrl(first.article.url), undefined);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+test("analysis cache requires matching model, prompt, and analysis versions", async () => {
+  await withTempDatabase((dataDir) => {
+    const db = new NewsDatabase(dataDir);
+    try {
+      const stored = db.upsertArticle(article()).article;
+      db.saveAnalysis(analysis(stored.id));
+
+      assert.equal(db.getAnalysis(stored.id, identity)?.summary, "summary");
+      assert.equal(db.getAnalysis(stored.id, { ...identity, modelName: "model-b" }), undefined);
+      assert.equal(db.getAnalysis(stored.id, { ...identity, promptVersion: "article-analysis-v2" }), undefined);
+      assert.equal(db.getAnalysis(stored.id, { ...identity, analysisVersion: "schema-v2" }), undefined);
+      assert.equal(db.getAnalysis(stored.id)?.totalTokens, 120);
     } finally {
       db.close();
     }
@@ -162,7 +194,7 @@ test("edition membership is stored relationally in editorial order", async () =>
   });
 });
 
-test("migration upgrades the legacy schema while preserving articles, analysis, editions, and checkpoints", async () => {
+test("migration upgrades the legacy schema and marks old analysis metadata as legacy", async () => {
   await withTempDatabase((dataDir) => {
     const dbPath = path.join(dataDir, "news.sqlite");
     const legacy = new Database(dbPath);
@@ -224,9 +256,8 @@ test("migration upgrades the legacy schema while preserving articles, analysis, 
       legacyArticle.fetchedAt
     );
     const row = legacy.prepare("SELECT id FROM articles WHERE url = ?").get(legacyArticle.url) as { id: number };
-    legacy.prepare(`
-      INSERT INTO analyses VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(row.id, "legacy summary", "[\"legacy\"]", 75, 1, "legacy reason", "[\"legacy fact\"]", "2026-08-29T08:06:00.000Z");
+    legacy.prepare(`INSERT INTO analyses VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(row.id, "legacy summary", "[\"legacy\"]", 75, 1, "legacy reason", "[\"legacy fact\"]", "2026-08-29T08:06:00.000Z");
     legacy.prepare("INSERT INTO editions VALUES (?, ?, ?, ?, ?)").run(
       "2026-08-29",
       "legacy overview",
@@ -241,7 +272,13 @@ test("migration upgrades the legacy schema while preserving articles, analysis, 
     try {
       assert.equal(upgraded.getSchemaVersion(), LATEST_SCHEMA_VERSION);
       assert.equal(upgraded.getArticleVersions(row.id).length, 1);
-      assert.equal(upgraded.getAnalysis(row.id)?.summary, "legacy summary");
+      const migrated = upgraded.getAnalysis(row.id);
+      assert.equal(migrated?.summary, "legacy summary");
+      assert.equal(migrated?.modelName, "legacy");
+      assert.equal(migrated?.promptVersion, "legacy");
+      assert.equal(migrated?.analysisVersion, "legacy");
+      assert.equal(migrated?.latencyMs, 0);
+      assert.equal(upgraded.getAnalysis(row.id, identity), undefined);
       assert.deepEqual(upgraded.getEditionArticleIds("2026-08-29"), [row.id]);
       assert.equal(upgraded.getSourceCheckpoint("meduza"), "2026-08-29T08:08:00.000Z");
     } finally {

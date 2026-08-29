@@ -21,6 +21,12 @@ test("parseConfig uses safe defaults", () => {
   assert.equal(config.httpRetryBaseDelayMs, 500);
   assert.equal(config.articleFetchDelayMs, 250);
   assert.equal(config.minArticleChars, 200);
+  assert.equal(config.llmTemperature, 0.2);
+  assert.equal(config.llmMaxOutputTokens, 1_200);
+  assert.equal(config.llmTimeoutMs, 120_000);
+  assert.equal(config.llmRetries, 2);
+  assert.equal(config.llmRetryBaseDelayMs, 500);
+  assert.equal(config.llmArticleMaxChars, 28_000);
 });
 
 test("parseConfig parses explicit values", () => {
@@ -44,6 +50,12 @@ test("parseConfig parses explicit values", () => {
     LLM_BASE_URL: "https://llm.example.test/",
     LLM_MODEL: "test-model",
     LLM_API_KEY: "secret",
+    LLM_TEMPERATURE: "0.35",
+    LLM_MAX_OUTPUT_TOKENS: "2048",
+    LLM_TIMEOUT_MS: "90000",
+    LLM_RETRIES: "3",
+    LLM_RETRY_BASE_DELAY_MS: "250",
+    LLM_ARTICLE_MAX_CHARS: "16000",
     LOG_LEVEL: "debug"
   });
 
@@ -63,6 +75,12 @@ test("parseConfig parses explicit values", () => {
   assert.equal(config.llmBaseUrl, "https://llm.example.test");
   assert.equal(config.llmModel, "test-model");
   assert.equal(config.llmApiKey, "secret");
+  assert.equal(config.llmTemperature, 0.35);
+  assert.equal(config.llmMaxOutputTokens, 2048);
+  assert.equal(config.llmTimeoutMs, 90_000);
+  assert.equal(config.llmRetries, 3);
+  assert.equal(config.llmRetryBaseDelayMs, 250);
+  assert.equal(config.llmArticleMaxChars, 16_000);
   assert.equal(config.logLevel, "debug");
 });
 
@@ -94,6 +112,13 @@ test("parseConfig validates ingestion timing and extraction ranges", () => {
     () => parseConfig({ MIN_ARTICLE_CHARS: "50" }),
     /MIN_ARTICLE_CHARS must be an integer between 100 and 10000/
   );
+});
+
+test("parseConfig validates LLM request and prompt bounds", () => {
+  assert.throws(() => parseConfig({ LLM_TEMPERATURE: "2.5" }), /LLM_TEMPERATURE must be a number between 0 and 2/);
+  assert.throws(() => parseConfig({ LLM_TIMEOUT_MS: "999" }), /LLM_TIMEOUT_MS must be an integer between 1000 and 600000/);
+  assert.throws(() => parseConfig({ LLM_RETRIES: "6" }), /LLM_RETRIES must be an integer between 0 and 5/);
+  assert.throws(() => parseConfig({ LLM_ARTICLE_MAX_CHARS: "999" }), /LLM_ARTICLE_MAX_CHARS must be an integer between 1000 and 100000/);
 });
 
 test("assertPipelineConfig rejects an empty LLM_MODEL for run", () => {

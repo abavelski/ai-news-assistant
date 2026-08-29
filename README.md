@@ -78,6 +78,25 @@ SQLite schema changes are applied as numbered migrations recorded in `schema_mig
 
 Edition membership is stored relationally as well as in the existing edition plan JSON so article/edition lookups can be indexed. Source checkpoints are monotonic and, when a run has failed items, advance only as far as the earliest failed publication timestamp. That keeps failed or undiscovered items eligible for the next RSS run instead of permanently skipping them.
 
+## LLM article analysis
+
+Per-article analysis uses the same OpenAI-compatible interface for local endpoints with no API key and cloud endpoints with an API key. Model output is parsed as JSON and then validated against a strict runtime schema before it can be persisted. Malformed output and transient/timeout failures are retried with bounded exponential backoff; non-transient request errors fail immediately.
+
+The article prompt and analysis schema have explicit versions. Cached analysis is reused only when the article content is unchanged and the configured model, prompt version, and analysis version all match. Changing the prompt/schema version therefore deliberately causes re-analysis without changing article storage.
+
+Long article text is bounded deterministically using Unicode grapheme boundaries: the prompt preserves the beginning and end and inserts an explicit omission marker in the middle. Configure the LLM boundary with:
+
+```dotenv
+LLM_TEMPERATURE=0.2
+LLM_MAX_OUTPUT_TOKENS=1200
+LLM_TIMEOUT_MS=120000
+LLM_RETRIES=2
+LLM_RETRY_BASE_DELAY_MS=500
+LLM_ARTICLE_MAX_CHARS=28000
+```
+
+Successful analysis rows record the model name, prompt and analysis versions, total LLM latency, and prompt/completion/total token counts when the provider reports them. Retry attempts that returned malformed model output are included in the persisted token totals. API keys are used only to construct request authorization headers; they are neither included in analysis metadata nor written to SQLite.
+
 ## Run one morning edition
 
 ```bash
@@ -134,7 +153,7 @@ tests/           lightweight Node test runner tests
 
 ## Current limitations
 
-This remains an architectural skeleton rather than a complete production service. Before unattended use beyond the current Meduza ingestion and storage scope, add stronger schema validation of LLM output, broader integration tests, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
+This remains an architectural skeleton rather than a complete production service. Before unattended use beyond the current ingestion, storage, and per-article LLM scope, add strict editorial-plan validation, broader integration tests, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
 
 ## Agent task plan
 

@@ -159,6 +159,23 @@ export const MIGRATIONS: Migration[] = [
         }
       }
     }
+  },
+  {
+    version: 3,
+    name: "003_versioned_analysis_metadata",
+    up(db) {
+      db.exec(`
+        ALTER TABLE analyses ADD COLUMN model_name TEXT NOT NULL DEFAULT 'legacy';
+        ALTER TABLE analyses ADD COLUMN prompt_version TEXT NOT NULL DEFAULT 'legacy';
+        ALTER TABLE analyses ADD COLUMN analysis_version TEXT NOT NULL DEFAULT 'legacy';
+        ALTER TABLE analyses ADD COLUMN latency_ms INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE analyses ADD COLUMN prompt_tokens INTEGER;
+        ALTER TABLE analyses ADD COLUMN completion_tokens INTEGER;
+        ALTER TABLE analyses ADD COLUMN total_tokens INTEGER;
+        CREATE INDEX IF NOT EXISTS idx_analyses_cache_identity
+          ON analyses(article_id, model_name, prompt_version, analysis_version);
+      `);
+    }
   }
 ];
 

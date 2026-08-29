@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import type { Article, ArticleAnalysis, EditorialPlan } from "../types.js";
+import type { AnalysisIdentity, Article, ArticleAnalysis, EditorialPlan } from "../types.js";
 import { MIGRATIONS } from "./migrations.js";
 
 export { LATEST_SCHEMA_VERSION } from "./migrations.js";
@@ -56,6 +56,30 @@ function mapVersion(row: Record<string, unknown>): ArticleVersion {
     contentHash: String(row.content_hash),
     fetchedAt: String(row.fetched_at),
     createdAt: String(row.created_at)
+  };
+}
+
+function optionalInteger(value: unknown): number | undefined {
+  return value === null || value === undefined ? undefined : Number(value);
+}
+
+function mapAnalysis(row: Record<string, unknown>): ArticleAnalysis {
+  return {
+    articleId: Number(row.article_id),
+    summary: String(row.summary),
+    topics: JSON.parse(String(row.topics_json)) as string[],
+    importance: Number(row.importance),
+    recommended: Boolean(row.recommended),
+    reason: String(row.reason),
+    keyFacts: JSON.parse(String(row.key_facts_json)) as string[],
+    analyzedAt: String(row.analyzed_at),
+    modelName: String(row.model_name),
+    promptVersion: String(row.prompt_version),
+    analysisVersion: String(row.analysis_version),
+    latencyMs: Number(row.latency_ms),
+    promptTokens: optionalInteger(row.prompt_tokens),
+    completionTokens: optionalInteger(row.completion_tokens),
+    totalTokens: optionalInteger(row.total_tokens)
   };
 }
 
@@ -236,25 +260,25 @@ export class NewsDatabase {
     return rows.map(mapVersion);
   }
 
-  getAnalysis(articleId: number): ArticleAnalysis | undefined {
-    const row = this.db.prepare("SELECT * FROM analyses WHERE article_id = ?").get(articleId) as Record<string, unknown> | undefined;
-    if (!row) return undefined;
-    return {
-      articleId: Number(row.article_id),
-      summary: String(row.summary),
-      topics: JSON.parse(String(row.topics_json)) as string[],
-      importance: Number(row.importance),
-      recommended: Boolean(row.recommended),
-      reason: String(row.reason),
-      keyFacts: JSON.parse(String(row.key_facts_json)) as string[],
-      analyzedAt: String(row.analyzed_at)
-    };
+  getAnalysis(articleId: number, identity?: AnalysisIdentity): ArticleAnalysis | undefined {
+    const row = identity
+      ? this.db.prepare(`
+          SELECT * FROM analyses
+          WHERE article_id = ? AND model_name = ? AND prompt_version = ? AND analysis_version = ?
+        `).get(articleId, identity.modelName, identity.promptVersion, identity.analysisVersion) as Record<string, unknown> | undefined
+      : this.db.prepare("SELECT * FROM analyses WHERE article_id = ?").get(articleId) as Record<string, unknown> | undefined;
+    return row ? mapAnalysis(row) : undefined;
   }
 
   saveAnalysis(analysis: ArticleAnalysis): void {
     this.db.prepare(`
-      INSERT INTO analyses (article_id, summary, topics_json, importance, recommended, reason, key_facts_json, analyzed_at)
-      VALUES (@articleId, @summary, @topicsJson, @importance, @recommended, @reason, @keyFactsJson, @analyzedAt)
+      INSERT INTO analyses (
+        article_id, summary, topics_json, importance, recommended, reason, key_facts_json, analyzed_at,
+        model_name, prompt_version, analysis_version, latency_ms, prompt_tokens, completion_tokens, total_tokens
+      ) VALUES (
+        @articleId, @summary, @topicsJson, @importance, @recommended, @reason, @keyFactsJson, @analyzedAt,
+        @modelName, @promptVersion, @analysisVersion, @latencyMs, @promptTokens, @completionTokens, @totalTokens
+      )
       ON CONFLICT(article_id) DO UPDATE SET
         summary = excluded.summary,
         topics_json = excluded.topics_json,
@@ -262,7 +286,14 @@ export class NewsDatabase {
         recommended = excluded.recommended,
         reason = excluded.reason,
         key_facts_json = excluded.key_facts_json,
-        analyzed_at = excluded.analyzed_at
+        analyzed_at = excluded.analyzed_at,
+        model_name = excluded.model_name,
+        prompt_version = excluded.prompt_version,
+        analysis_version = excluded.analysis_version,
+        latency_ms = excluded.latency_ms,
+        prompt_tokens = excluded.prompt_tokens,
+        completion_tokens = excluded.completion_tokens,
+        total_tokens = excluded.total_tokens
     `).run({
       articleId: analysis.articleId,
       summary: analysis.summary,
@@ -271,7 +302,14 @@ export class NewsDatabase {
       recommended: analysis.recommended ? 1 : 0,
       reason: analysis.reason,
       keyFactsJson: JSON.stringify(analysis.keyFacts),
-      analyzedAt: analysis.analyzedAt
+      analyzedAt: analysis.analyzedAt,
+      modelName: analysis.modelName,
+      promptVersion: analysis.promptVersion,
+      analysisVersion: analysis.analysisVersion,
+      latencyMs: analysis.latencyMs,
+      promptTokens: analysis.promptTokens ?? null,
+      completionTokens: analysis.completionTokens ?? null,
+      totalTokens: analysis.totalTokens ?? null
     });
   }
 
