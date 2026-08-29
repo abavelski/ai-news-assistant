@@ -97,6 +97,20 @@ LLM_ARTICLE_MAX_CHARS=28000
 
 Successful analysis rows record the model name, prompt and analysis versions, total LLM latency, and prompt/completion/total token counts when the provider reports them. Retry attempts that returned malformed model output are included in the persisted token totals. API keys are used only to construct request authorization headers; they are neither included in analysis metadata nor written to SQLite.
 
+## Editorial selection
+
+The second-pass editor receives article metadata and validated analyses only: ids, source, titles, publication times, topics, summaries, reasons, key facts, importance, and recommendation status. Raw article bodies and HTML are never included in the editorial prompt. The editorial response is strictly validated; unknown ids, duplicate ids, empty or over-limit selections, topic-cap violations, near-duplicate coverage, malformed JSON, or a provider failure all trigger the deterministic fallback instead of being silently repaired.
+
+`EDITION_MAX_ARTICLES` remains the overall story limit. `EDITORIAL_MAX_PER_TOPIC` controls topic balance and defaults to 3 (or the edition limit when that is smaller):
+
+```dotenv
+EDITION_MAX_ARTICLES=10
+EDITORIAL_MAX_PER_TOPIC=3
+EDITION_LANGUAGE=ru
+```
+
+The fallback ranks stories deterministically using importance, recommendation status, and freshness, then applies the same topic balance and lightweight same-source duplicate avoidance. Its overview is assembled from already validated article summaries, so it remains readable even when the editorial model is unavailable; Russian editions receive a Russian morning lead-in. Each saved edition records the configured editorial model, editorial prompt version, and whether selection came from the LLM or fallback.
+
 ## Run one morning edition
 
 ```bash
@@ -153,7 +167,7 @@ tests/           lightweight Node test runner tests
 
 ## Current limitations
 
-This remains an architectural skeleton rather than a complete production service. Before unattended use beyond the current ingestion, storage, and per-article LLM scope, add strict editorial-plan validation, broader integration tests, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
+This remains an architectural skeleton rather than a complete production service. Before unattended use beyond the current ingestion, storage, LLM, and editorial-selection scope, add EPUB/rendering hardening, broader integration tests, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
 
 ## Agent task plan
 

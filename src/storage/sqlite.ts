@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import type { AnalysisIdentity, Article, ArticleAnalysis, EditorialPlan } from "../types.js";
+import type { AnalysisIdentity, Article, ArticleAnalysis, EditorialMetadata, EditorialPlan } from "../types.js";
 import { MIGRATIONS } from "./migrations.js";
 
 export { LATEST_SCHEMA_VERSION } from "./migrations.js";
@@ -313,17 +313,37 @@ export class NewsDatabase {
     });
   }
 
-  saveEdition(editionDate: string, plan: EditorialPlan, outputPath: string): void {
+  saveEdition(
+    editionDate: string,
+    plan: EditorialPlan,
+    outputPath: string,
+    metadata: EditorialMetadata = { modelName: "legacy", promptVersion: "legacy", selectionMethod: "fallback" }
+  ): void {
     const save = this.db.transaction(() => {
       this.db.prepare(`
-        INSERT INTO editions (edition_date, overview, selected_article_ids_json, output_path, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO editions (
+          edition_date, overview, selected_article_ids_json, output_path, created_at,
+          editorial_model_name, editorial_prompt_version, editorial_selection_method
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(edition_date) DO UPDATE SET
           overview = excluded.overview,
           selected_article_ids_json = excluded.selected_article_ids_json,
           output_path = excluded.output_path,
-          created_at = excluded.created_at
-      `).run(editionDate, plan.overview, JSON.stringify(plan.selectedArticleIds), outputPath, new Date().toISOString());
+          created_at = excluded.created_at,
+          editorial_model_name = excluded.editorial_model_name,
+          editorial_prompt_version = excluded.editorial_prompt_version,
+          editorial_selection_method = excluded.editorial_selection_method
+      `).run(
+        editionDate,
+        plan.overview,
+        JSON.stringify(plan.selectedArticleIds),
+        outputPath,
+        new Date().toISOString(),
+        metadata.modelName,
+        metadata.promptVersion,
+        metadata.selectionMethod
+      );
 
       this.db.prepare("DELETE FROM edition_articles WHERE edition_date = ?").run(editionDate);
       const insertMembership = this.db.prepare(`
@@ -346,6 +366,20 @@ export class NewsDatabase {
       SELECT article_id FROM edition_articles WHERE edition_date = ? ORDER BY position ASC
     `).all(editionDate) as Array<{ article_id: number }>;
     return rows.map((row) => Number(row.article_id));
+  }
+
+  getEditionEditorialMetadata(editionDate: string): EditorialMetadata | undefined {
+    const row = this.db.prepare(`
+      SELECT editorial_model_name, editorial_prompt_version, editorial_selection_method
+      FROM editions WHERE edition_date = ?
+    `).get(editionDate) as Record<string, unknown> | undefined;
+    if (!row) return undefined;
+    const selectionMethod = String(row.editorial_selection_method);
+    return {
+      modelName: String(row.editorial_model_name),
+      promptVersion: String(row.editorial_prompt_version),
+      selectionMethod: selectionMethod === "llm" ? "llm" : "fallback"
+    };
   }
 
   getSourceCheckpoint(sourceId: string): string | undefined {

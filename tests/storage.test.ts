@@ -67,7 +67,7 @@ test("migrations initialize an empty database at the latest schema version", asy
     const db = new NewsDatabase(dataDir);
     try {
       assert.equal(db.getSchemaVersion(), LATEST_SCHEMA_VERSION);
-      assert.equal(LATEST_SCHEMA_VERSION, 3);
+      assert.equal(LATEST_SCHEMA_VERSION, 4);
     } finally {
       db.close();
     }
@@ -185,9 +185,15 @@ test("edition membership is stored relationally in editorial order", async () =>
       db.saveEdition(
         "2026-08-29",
         { overview: "overview", selectedArticleIds: [two.id, two.id, one.id] },
-        "/tmp/latest.epub"
+        "/tmp/latest.epub",
+        { modelName: "editor-model", promptVersion: "editorial-v1", selectionMethod: "llm" }
       );
       assert.deepEqual(db.getEditionArticleIds("2026-08-29"), [two.id, one.id]);
+      assert.deepEqual(db.getEditionEditorialMetadata("2026-08-29"), {
+        modelName: "editor-model",
+        promptVersion: "editorial-v1",
+        selectionMethod: "llm"
+      });
     } finally {
       db.close();
     }
@@ -280,6 +286,11 @@ test("migration upgrades the legacy schema and marks old analysis metadata as le
       assert.equal(migrated?.latencyMs, 0);
       assert.equal(upgraded.getAnalysis(row.id, identity), undefined);
       assert.deepEqual(upgraded.getEditionArticleIds("2026-08-29"), [row.id]);
+      assert.deepEqual(upgraded.getEditionEditorialMetadata("2026-08-29"), {
+        modelName: "legacy",
+        promptVersion: "legacy",
+        selectionMethod: "fallback"
+      });
       assert.equal(upgraded.getSourceCheckpoint("meduza"), "2026-08-29T08:08:00.000Z");
     } finally {
       upgraded.close();

@@ -3,18 +3,13 @@ import { ExtractionError, FetchError, LlmError } from "./errors.js";
 import { fetchAndExtract } from "./extraction/readability.js";
 import { sleep } from "./http.js";
 import { analyzeArticle, articleAnalysisIdentity } from "./llm/article-analysis.js";
-import { editorialPrompt } from "./llm/prompts.js";
-import { parseJsonObject, type LlmProvider } from "./llm/provider.js";
+import { selectEditorialPlan } from "./llm/editorial.js";
+import type { LlmProvider } from "./llm/provider.js";
 import { logger } from "./logging.js";
 import { renderEpub } from "./rendering/epub.js";
 import type { NewsSource } from "./sources/source.js";
 import { NewsDatabase } from "./storage/sqlite.js";
-import type { EditionArticle, EditorialPlan, EditionResult } from "./types.js";
-
-interface EditorialJson {
-  overview: string;
-  selectedArticleIds: number[];
-}
+import type { EditionArticle, EditionResult } from "./types.js";
 
 export async function runPipeline(config: AppConfig, source: NewsSource, llm: LlmProvider): Promise<EditionResult> {
   const log = logger.child({ component: "pipeline", sourceId: source.id });
@@ -94,23 +89,19 @@ export async function runPipeline(config: AppConfig, source: NewsSource, llm: Ll
     });
   }
 
-  const editorialCompletion = await llm.complete([
-    { role: "system", content: "You are a rigorous personal newspaper editor. Return only JSON when requested." },
-    { role: "user", content: editorialPrompt(processed, config.editionLanguage, config.editionMaxArticles) }
-  ]);
-
-  let plan = parseJsonObject<EditorialJson>(editorialCompletion.content) as EditorialPlan;
-  const validIds = new Set(processed.map(({ article }) => article.id));
-  plan.selectedArticleIds = plan.selectedArticleIds.filter((id) => validIds.has(id)).slice(0, config.editionMaxArticles);
-  if (!plan.selectedArticleIds.length) {
-    plan = {
-      overview: plan.overview || "Morning edition",
-      selectedArticleIds: [...processed]
-        .sort((a, b) => b.analysis.importance - a.analysis.importance)
-        .slice(0, config.editionMaxArticles)
-        .map(({ article }) => article.id)
-    };
-  }
+  const editorial = await selectEditorialPlan(processed, llm, {
+    language: config.editionLanguage,
+    modelName: config.llmModel,
+    maxArticles: config.editionMaxArticles,
+    maxPerTopic: config.editorialMaxPerTopic
+  });
+  const plan = editorial.plan;
+  log.info("editorial selection completed", {
+    selectedCount: plan.selectedArticleIds.length,
+    modelName: editorial.metadata.modelName,
+    promptVersion: editorial.metadata.promptVersion,
+    selectionMethod: editorial.metadata.selectionMethod
+  });
 
   const byId = new Map(processed.map((entry) => [entry.article.id, entry]));
   const selected = plan.selectedArticleIds.flatMap((id) => {
@@ -119,7 +110,7 @@ export async function runPipeline(config: AppConfig, source: NewsSource, llm: Ll
   });
   const editionDate = new Date().toISOString().slice(0, 10);
   const rendered = await renderEpub(config, editionDate, plan, selected);
-  db.saveEdition(editionDate, plan, rendered.epubPath);
+  db.saveEdition(editionDate, plan, rendered.epubPath, editorial.metadata);
   const checkpoint = db.recordSourceRunCompletion(
     source.id,
     runStartedAt.toISOString(),

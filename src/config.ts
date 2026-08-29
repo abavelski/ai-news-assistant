@@ -11,6 +11,7 @@ export interface AppConfig {
   lookbackHours: number;
   maxArticles: number;
   editionMaxArticles: number;
+  editorialMaxPerTopic: number;
   editionLanguage: string;
   includeFullArticles: boolean;
   meduzaRssUrl: string;
@@ -119,10 +120,22 @@ export function parseConfig(env: Environment = process.env): AppConfig {
   const outputDirRaw = nonEmptyEnv(env, "OUTPUT_DIR", path.join(dataDir, "public", "daily"));
   const maxArticles = integerEnv(env, "MAX_ARTICLES", 50, 1, 1000);
   const editionMaxArticles = integerEnv(env, "EDITION_MAX_ARTICLES", 10, 1, 1000);
+  const editorialMaxPerTopic = integerEnv(
+    env,
+    "EDITORIAL_MAX_PER_TOPIC",
+    Math.min(3, editionMaxArticles),
+    1,
+    1000
+  );
 
   if (editionMaxArticles > maxArticles) {
     throw new ConfigurationError(
       `EDITION_MAX_ARTICLES (${editionMaxArticles}) must not exceed MAX_ARTICLES (${maxArticles}).`
+    );
+  }
+  if (editorialMaxPerTopic > editionMaxArticles) {
+    throw new ConfigurationError(
+      `EDITORIAL_MAX_PER_TOPIC (${editorialMaxPerTopic}) must not exceed EDITION_MAX_ARTICLES (${editionMaxArticles}).`
     );
   }
 
@@ -134,6 +147,7 @@ export function parseConfig(env: Environment = process.env): AppConfig {
     lookbackHours: integerEnv(env, "LOOKBACK_HOURS", 24, 1, 720),
     maxArticles,
     editionMaxArticles,
+    editorialMaxPerTopic,
     editionLanguage: nonEmptyEnv(env, "EDITION_LANGUAGE", "ru"),
     includeFullArticles: booleanEnv(env, "INCLUDE_FULL_ARTICLES", true),
     meduzaRssUrl: httpUrlEnv(env, "MEDUZA_RSS_URL", "https://meduza.io/rss/all"),

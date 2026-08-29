@@ -47,6 +47,12 @@ export interface EditorialPlan {
   selectedArticleIds: number[];
 }
 
+export interface EditorialMetadata {
+  modelName: string;
+  promptVersion: string;
+  selectionMethod: "llm" | "fallback";
+}
+
 export interface EditionArticle {
   article: Article & { id: number };
   analysis: ArticleAnalysis;

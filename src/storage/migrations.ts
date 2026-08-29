@@ -176,6 +176,17 @@ export const MIGRATIONS: Migration[] = [
           ON analyses(article_id, model_name, prompt_version, analysis_version);
       `);
     }
+  },
+  {
+    version: 4,
+    name: "004_editorial_metadata",
+    up(db) {
+      db.exec(`
+        ALTER TABLE editions ADD COLUMN editorial_model_name TEXT NOT NULL DEFAULT 'legacy';
+        ALTER TABLE editions ADD COLUMN editorial_prompt_version TEXT NOT NULL DEFAULT 'legacy';
+        ALTER TABLE editions ADD COLUMN editorial_selection_method TEXT NOT NULL DEFAULT 'legacy';
+      `);
+    }
   }
 ];
 
