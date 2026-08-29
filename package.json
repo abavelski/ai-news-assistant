@@ -1,0 +1,30 @@
+{
+  "name": "ai-news-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted AI-powered morning news digest and EPUB generator",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "check": "npm run build && npm test"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "better-sqlite3": "^11.8.1",
+    "jsdom": "^26.0.0",
+    "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
