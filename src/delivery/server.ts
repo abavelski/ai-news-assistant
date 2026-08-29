@@ -2,6 +2,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import type { AppConfig } from "../config.js";
+import { logger } from "../logging.js";
 
 const FILES: Record<string, { name: string; contentType: string }> = {
   "/daily/latest.epub": { name: "latest.epub", contentType: "application/epub+zip" },
@@ -9,6 +10,7 @@ const FILES: Record<string, { name: string; contentType: string }> = {
 };
 
 export function startDeliveryServer(config: AppConfig): void {
+  const log = logger.child({ component: "delivery-server" });
   const server = http.createServer((request, response) => {
     if (request.url === "/healthz") {
       response.writeHead(200, { "content-type": "application/json" });
@@ -36,6 +38,6 @@ export function startDeliveryServer(config: AppConfig): void {
   });
 
   server.listen(config.port, config.host, () => {
-    console.log(`Delivery server listening on http://${config.host}:${config.port}`);
+    log.info("delivery server listening", { host: config.host, port: config.port });
   });
 }

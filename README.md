@@ -17,10 +17,10 @@ Meduza RSS
    -> /daily/latest.json + /daily/latest.epub
 ```
 
-## Requirements
+## Supported runtime
 
-- Node.js 22+
-- npm
+- Node.js 22 or newer
+- npm 10 or newer
 - SQLite build prerequisites needed by `better-sqlite3`
 - Pandoc available as `pandoc`
 - An OpenAI-compatible `/v1/chat/completions` endpoint
@@ -34,16 +34,25 @@ npm install
 cp .env.example .env
 ```
 
-This skeleton deliberately does not depend on an environment-file loader. Export variables in your shell/systemd unit, source `.env` before running, or add `dotenv` in a later task.
+For local development, the CLI automatically loads `.env` from the current working directory using Node.js' built-in environment-file support. Existing environment variables are not overwritten, so production and systemd deployments can continue to provide settings with `Environment=`, `EnvironmentFile=`, or another service-level mechanism without relying on `.env`.
 
-At minimum set:
+At minimum, set an LLM model before running the pipeline or the doctor command:
 
-```bash
-export LLM_BASE_URL=http://127.0.0.1:11434
-export LLM_MODEL='your-model-name'
+```dotenv
+LLM_BASE_URL=http://127.0.0.1:11434
+LLM_MODEL=your-model-name
 ```
 
-For a cloud provider, also set `LLM_API_KEY`.
+For a cloud provider, also set `LLM_API_KEY`. Logs are structured JSON and redact API-key, token, secret, cookie, password, and authorization fields. Set `LOG_LEVEL` to `debug`, `info`, `warn`, or `error`; the default is `info`.
+
+Validate a checkout before running news ingestion:
+
+```bash
+npm run check
+npm run dev -- doctor
+```
+
+`doctor` does not fetch news. It verifies that the configured data and output directories are writable, that the LLM settings needed by `run` are present, and that Pandoc is available on `PATH`.
 
 ## Run one morning edition
 
@@ -83,7 +92,7 @@ The intended home-server deployment is two systemd units:
 1. a long-running delivery server;
 2. a timer that runs the pipeline around 06:00 each morning.
 
-The exact systemd deployment is intentionally left as an implementation task in [`plans/06-http-delivery-scheduling.md`](plans/06-http-delivery-scheduling.md).
+Task 00 keeps configuration systemd-friendly by letting service-provided environment variables take precedence over a local `.env`. The exact systemd deployment remains intentionally deferred to [`plans/06-http-delivery-scheduling.md`](plans/06-http-delivery-scheduling.md).
 
 ## Project layout
 
@@ -101,7 +110,7 @@ tests/           lightweight Node test runner tests
 
 ## Current limitations
 
-This is an architectural skeleton, not a production-ready scraper. Before unattended use, add retries/backoff, stronger schema validation of LLM output, extraction fixtures, integration tests, observability, rate limiting, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
+This remains an architectural skeleton rather than a production-ready scraper. Before unattended use, add retries/backoff, stronger schema validation of LLM output, extraction fixtures, integration tests, rate limiting, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
 
 ## Agent task plan
 

@@ -1,7 +1,9 @@
 import type { AppConfig } from "./config.js";
+import { ExtractionError } from "./errors.js";
 import { fetchAndExtract } from "./extraction/readability.js";
 import { articleAnalysisPrompt, editorialPrompt } from "./llm/prompts.js";
 import { parseJsonObject, type LlmProvider } from "./llm/provider.js";
+import { logger } from "./logging.js";
 import { renderEpub } from "./rendering/epub.js";
 import type { NewsSource } from "./sources/source.js";
 import { NewsDatabase } from "./storage/sqlite.js";
@@ -22,15 +24,16 @@ interface EditorialJson {
 }
 
 export async function runPipeline(config: AppConfig, source: NewsSource, llm: LlmProvider): Promise<EditionResult> {
+  const log = logger.child({ component: "pipeline", sourceId: source.id });
   const db = new NewsDatabase(config.dataDir);
   const runStartedAt = new Date();
   const fallbackSince = new Date(runStartedAt.getTime() - config.lookbackHours * 60 * 60 * 1000);
   const lastRun = db.getSourceLastRun(source.id);
   const since = lastRun ? new Date(Math.max(new Date(lastRun).getTime(), fallbackSince.getTime())) : fallbackSince;
 
-  console.log(`[pipeline] discovering ${source.id} items since ${since.toISOString()}`);
+  log.info("discovering source items", { since: since.toISOString() });
   const discovered = await source.discover(since);
-  console.log(`[pipeline] discovered ${discovered.length} items`);
+  log.info("source discovery completed", { discoveredCount: discovered.length });
 
   const processed: EditionArticle[] = [];
   for (const item of discovered) {
@@ -59,11 +62,15 @@ export async function runPipeline(config: AppConfig, source: NewsSource, llm: Ll
       }
       processed.push({ article, analysis });
     } catch (error) {
-      console.error(`[pipeline] failed ${item.url}`, error);
+      log.error("article processing failed", { url: item.url, error });
     }
   }
 
-  if (!processed.length) throw new Error("No articles were successfully processed; no edition generated.");
+  if (!processed.length) {
+    throw new ExtractionError("No articles were successfully processed; no edition was generated.", {
+      context: { sourceId: source.id, discoveredCount: discovered.length }
+    });
+  }
 
   const editorialRaw = await llm.complete([
     { role: "system", content: "You are a rigorous personal newspaper editor. Return only JSON when requested." },

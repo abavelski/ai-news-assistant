@@ -5,12 +5,14 @@
   "description": "Self-hosted AI-powered morning news digest and EPUB generator",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22",
+    "npm": ">=10"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
-    "start": "node dist/index.js",
+    "doctor": "tsx src/index.ts doctor",
+    "start": "node dist/src/index.js",
     "test": "node --import tsx --test tests/**/*.test.ts",
     "check": "npm run build && npm test"
   },

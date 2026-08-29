@@ -1,3 +1,5 @@
+import { LlmError } from "../errors.js";
+
 export interface LlmMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -13,5 +15,9 @@ export function parseJsonObject<T>(raw: string): T {
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/, "")
     .trim();
-  return JSON.parse(unfenced) as T;
+  try {
+    return JSON.parse(unfenced) as T;
+  } catch (cause) {
+    throw new LlmError("LLM response was not valid JSON.", { cause });
+  }
 }
