@@ -29,7 +29,7 @@ export async function runPipeline(config: AppConfig, source: NewsSource, llm: Ll
   const db = new NewsDatabase(config.dataDir);
   const runStartedAt = new Date();
   const fallbackSince = new Date(runStartedAt.getTime() - config.lookbackHours * 60 * 60 * 1000);
-  const lastRun = db.getSourceLastRun(source.id);
+  const lastRun = db.getSourceCheckpoint(source.id);
   const since = lastRun ? new Date(Math.max(new Date(lastRun).getTime(), fallbackSince.getTime())) : fallbackSince;
 
   log.info("discovering source items", { since: since.toISOString() });
@@ -38,6 +38,7 @@ export async function runPipeline(config: AppConfig, source: NewsSource, llm: Ll
 
   const processed: EditionArticle[] = [];
   let failedCount = 0;
+  const failedPublishedAt: string[] = [];
   for (let index = 0; index < discovered.length; index += 1) {
     const item = discovered[index];
     if (!item) continue;
@@ -76,6 +77,7 @@ export async function runPipeline(config: AppConfig, source: NewsSource, llm: Ll
       processed.push({ article, analysis });
     } catch (error) {
       failedCount += 1;
+      failedPublishedAt.push(item.publishedAt);
       const stage = error instanceof FetchError
         ? "fetch"
         : error instanceof ExtractionError
@@ -119,7 +121,16 @@ export async function runPipeline(config: AppConfig, source: NewsSource, llm: Ll
   const editionDate = new Date().toISOString().slice(0, 10);
   const rendered = await renderEpub(config, editionDate, plan, selected);
   db.saveEdition(editionDate, plan, rendered.epubPath);
-  db.setSourceLastRun(source.id, runStartedAt.toISOString());
+  const checkpoint = db.recordSourceRunCompletion(
+    source.id,
+    runStartedAt.toISOString(),
+    failedPublishedAt
+  );
+  log.info("source checkpoint recorded", {
+    checkpoint,
+    partial: failedPublishedAt.length > 0,
+    failedCount: failedPublishedAt.length
+  });
 
   return {
     editionDate,

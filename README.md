@@ -72,6 +72,12 @@ MIN_ARTICLE_CHARS=200
 
 Transient network errors and HTTP 408/425/429/5xx responses are retried with bounded exponential backoff. Permanent HTTP failures and pages that do not yield enough article text are logged with their failure stage and skipped so one bad article does not abort an otherwise successful edition.
 
+## Storage and repeat runs
+
+SQLite schema changes are applied as numbered migrations recorded in `schema_migrations`. The current article row remains the fast lookup surface, while immutable `article_versions` rows retain each distinct `(normalized URL, content hash)` version. Re-fetching unchanged content creates no new version and reuses existing analysis; changed content creates one new history row and invalidates the stale analysis in the same transaction.
+
+Edition membership is stored relationally as well as in the existing edition plan JSON so article/edition lookups can be indexed. Source checkpoints are monotonic and, when a run has failed items, advance only as far as the earliest failed publication timestamp. That keeps failed or undiscovered items eligible for the next RSS run instead of permanently skipping them.
+
 ## Run one morning edition
 
 ```bash
@@ -128,7 +134,7 @@ tests/           lightweight Node test runner tests
 
 ## Current limitations
 
-This remains an architectural skeleton rather than a complete production service. Before unattended use beyond the current Meduza ingestion scope, add stronger schema validation of LLM output, broader integration tests, safe versioned storage/checkpoint migrations, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
+This remains an architectural skeleton rather than a complete production service. Before unattended use beyond the current Meduza ingestion and storage scope, add stronger schema validation of LLM output, broader integration tests, and source-specific compliance checks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
 
 ## Agent task plan
 
