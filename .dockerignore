@@ -9,6 +9,7 @@ dist
 data
 **/data
 *.epub
+artifacts
 coverage
 npm-debug.log*
 .DS_Store

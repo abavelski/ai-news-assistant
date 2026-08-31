@@ -1,0 +1,5 @@
+services:
+  app:
+    pull_policy: never
+    volumes:
+      - ${AI_NEWS_DATA_DIR:-/var/lib/ai-news-assistant}:/app/data

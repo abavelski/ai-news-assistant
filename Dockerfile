@@ -15,6 +15,7 @@ COPY tsconfig.json ./
 COPY src ./src
 COPY tests ./tests
 COPY ops ./ops
+COPY scripts ./scripts
 
 RUN npm run check \
     && rm -rf dist/tests \

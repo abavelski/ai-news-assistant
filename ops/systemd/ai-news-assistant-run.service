@@ -1,19 +1,11 @@
 [Unit]
-Description=AI News Assistant morning edition generation
+Description=AI News Assistant morning edition generation in Docker
 Wants=network-online.target
-After=network-online.target
+Requires=docker.service
+After=network-online.target docker.service
 
 [Service]
 Type=oneshot
-User=ai-news-assistant
-Group=ai-news-assistant
 WorkingDirectory=/opt/ai-news-assistant
-Environment=NODE_ENV=production
-EnvironmentFile=/etc/ai-news-assistant.env
-ExecStart=/usr/bin/node /opt/ai-news-assistant/dist/src/index.js run
+ExecStart=/usr/bin/docker compose --env-file /opt/ai-news-assistant/.env -f /opt/ai-news-assistant/compose.yaml -f /opt/ai-news-assistant/ops/homelab/compose.yaml run --rm --pull never app run
 TimeoutStartSec=45min
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/lib/ai-news-assistant

@@ -1,23 +1,18 @@
 [Unit]
-Description=AI News Assistant HTTP delivery service
-After=network.target
+Description=AI News Assistant Docker delivery service
+Wants=network-online.target
+Requires=docker.service
+After=network-online.target docker.service
 
 [Service]
-Type=simple
-User=ai-news-assistant
-Group=ai-news-assistant
+Type=oneshot
+RemainAfterExit=yes
 WorkingDirectory=/opt/ai-news-assistant
-Environment=NODE_ENV=production
-EnvironmentFile=/etc/ai-news-assistant.env
-ExecStart=/usr/bin/node /opt/ai-news-assistant/dist/src/index.js serve
-Restart=on-failure
-RestartSec=5s
-TimeoutStopSec=20s
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/lib/ai-news-assistant
+ExecStart=/usr/bin/docker compose --env-file /opt/ai-news-assistant/.env -f /opt/ai-news-assistant/compose.yaml -f /opt/ai-news-assistant/ops/homelab/compose.yaml up -d --no-build app
+ExecReload=/usr/bin/docker compose --env-file /opt/ai-news-assistant/.env -f /opt/ai-news-assistant/compose.yaml -f /opt/ai-news-assistant/ops/homelab/compose.yaml up -d --no-build app
+ExecStop=/usr/bin/docker compose --env-file /opt/ai-news-assistant/.env -f /opt/ai-news-assistant/compose.yaml -f /opt/ai-news-assistant/ops/homelab/compose.yaml stop app
+TimeoutStartSec=5min
+TimeoutStopSec=2min
 
 [Install]
 WantedBy=multi-user.target

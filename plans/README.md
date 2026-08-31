@@ -2,12 +2,12 @@
 
 The server MVP is complete and tested. The original MVP implementation tasks are retained for historical reference under [`completed/`](completed/), with a concise delivered-system summary in [`MVP-SUMMARY.md`](MVP-SUMMARY.md).
 
-The active workstream is packaging and operating the MVP on a weak Linux home-lab server using Docker and Docker Compose. Deployment images are built on a stronger local machine and transferred directly over the LAN; only the Git repository is published.
+The Docker home-lab deployment workstream is now implemented. Deployment images are built on a stronger local machine and transferred directly over the LAN to the weak server; only the Git repository is published.
 
-## Deployment tasks
+## Completed deployment work
 
-1. [`10-docker-runtime.md`](deployment/10-docker-runtime.md) — completed reproducible Docker image, Compose runtime, persistent data contract, and container smoke tests.
-2. [`11-home-lab-operations.md`](deployment/11-home-lab-operations.md) — next: build/export on a strong local machine, SCP/SSH image transfer to the Lenovo, `docker load`/`--no-build` deployment, Docker-aware systemd scheduling, persistent backups/rollback, and a separate LAN LLM endpoint.
+1. [`10-docker-runtime.md`](deployment/10-docker-runtime.md) — reproducible Docker image, Compose runtime, persistent data contract, and container smoke tests.
+2. [`11-home-lab-operations.md`](deployment/11-home-lab-operations.md) — local image build/export/transfer, host-visible persistence, Docker-aware systemd scheduling, LAN LLM configuration, update, rollback, backup, and cleanup procedures.
 
 There is no container-registry publishing task. GHCR/Docker Hub publishing is intentionally out of scope for the current deployment model. Wake-on-LAN for the separate gaming-rig LLM may be planned later as its own task.
 

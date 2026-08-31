@@ -2,7 +2,7 @@
 
 Goal: make the tested MVP practical on a weak Linux home-lab server without publishing Docker images or requiring the server to build them.
 
-The target operating model is:
+The implemented operating model is:
 
 ```text
 Strong amd64 build machine / gaming rig
@@ -24,7 +24,7 @@ Weak Lenovo home server
 │   ├── builds/
 │   └── public/daily/
 └── systemd timer
-    └── `docker compose run --rm --no-build app run`
+    └── `docker compose run --rm --pull never app run`
 
 Separate LAN LLM machine (normally gaming rig when powered on)
 └── OpenAI-compatible endpoint reached by LAN IP/local DNS
@@ -36,9 +36,9 @@ The container image contains Node.js, production dependencies, Pandoc, compiled 
 
 The LLM does not run on the Lenovo. The container connects to a separate LAN endpoint such as `http://gaming-rig.home.arpa:11434` when that machine is available. Wake-on-LAN orchestration may be added later as a separate task.
 
-## Order
+## Completed tasks
 
-1. [`10-docker-runtime.md`](10-docker-runtime.md) — completed Docker/Compose runtime contract and container smoke validation.
+1. [`10-docker-runtime.md`](10-docker-runtime.md) — Docker/Compose runtime contract and container smoke validation.
 2. [`11-home-lab-operations.md`](11-home-lab-operations.md) — local build/export/transfer workflow, Docker-aware systemd scheduling, persistent server storage, LAN LLM configuration, update/rollback/backup operations.
 
-There is intentionally no registry-publishing task. Do not add GHCR/Docker Hub publishing unless the deployment model changes in the future.
+There is intentionally no registry-publishing task. Do not add GHCR/Docker Hub publishing unless the deployment model changes in the future. Wake-on-LAN remains a possible future task.

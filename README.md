@@ -85,7 +85,7 @@ A repeatable container smoke test is also available for development/CI. It build
 npm run docker:smoke
 ```
 
-The existing host-Node/systemd instructions remain available below for non-container deployments. Docker-aware systemd scheduling is a separate deployment task.
+For the low-resource home-lab deployment, build and validate the image on a stronger machine, export it with `docker save`, transfer it over the trusted LAN, and run only the preloaded image on the server. See [`ops/systemd/README.md`](ops/systemd/README.md) for the complete local-image transfer, bind-mounted storage, systemd scheduling, update, backup, and rollback workflow.
 
 ## Local development setup
 
@@ -244,15 +244,38 @@ The server accepts `SIGTERM`/`SIGINT` and stops accepting requests gracefully be
 
 ## Home-server operations
 
-Ready-to-customize systemd examples live in [`ops/systemd/`](ops/systemd/):
+The production home-lab path uses Docker Compose rather than host Node.js. The weak server runs only prebuilt, locally transferred images; it does not build or pull application images.
 
-1. `ai-news-assistant-serve.service` runs HTTP delivery continuously;
-2. `ai-news-assistant-run.service` is the one-shot morning generator;
-3. `ai-news-assistant-run.timer` schedules generation from 06:00 with up to 30 minutes of randomized delay.
+Build and validate a clean Git revision on the stronger machine:
 
-The unit examples use explicit absolute paths and an external `/etc/ai-news-assistant.env`; no API key is embedded in committed units. See [`ops/systemd/README.md`](ops/systemd/README.md) for installation, schedule overrides, LAN/firewall assumptions, `journalctl` commands, manual reruns, retention, and emergency rollback instructions.
+```bash
+./scripts/build-deployment-image.sh
+```
 
-Do not expose the unauthenticated delivery port directly to the public internet. If access beyond the trusted LAN is required, use a private VPN or a reverse proxy that provides TLS and authentication.
+Transfer the resulting `artifacts/ai-news-assistant-<git-sha>.tar.gz` over SSH and load it on the server:
+
+```bash
+./scripts/transfer-deployment-image.sh \
+  artifacts/ai-news-assistant-<git-sha>.tar.gz \
+  homelab
+```
+
+The production override [`ops/homelab/compose.yaml`](ops/homelab/compose.yaml) uses a host-visible persistent directory (default `/var/lib/ai-news-assistant`) and refuses registry pulls. The long-running delivery service starts with `up -d --no-build`; scheduled/manual one-shot commands use `run --rm --pull never` because Compose `run` does not provide a `--no-build` option.
+
+The normal local LLM is a separate LAN service, for example:
+
+```dotenv
+LLM_BASE_URL=http://gaming-rig.home.arpa:11434
+LLM_MODEL=your-model-name
+```
+
+The LLM host must listen on a LAN-reachable interface and allow the server through its firewall. If that machine is unavailable, a generation attempt may fail, but the existing degraded-health behavior keeps the previous successful `latest.epub` available.
+
+Docker-aware systemd examples live in [`ops/systemd/`](ops/systemd/). The existing timer still schedules generation from 06:00 with up to 30 minutes randomized delay, and every run shares the same bind-mounted `pipeline.lock`, SQLite database, status file, and EPUB directory.
+
+See [`ops/systemd/README.md`](ops/systemd/README.md) for the full first-install, local image transfer/load, permissions, systemd setup, update, rollback, backup, logging, LAN exposure, and manual image-cleanup procedures.
+
+Do not expose the unauthenticated delivery port directly to the public internet.
 
 ## Project layout
 

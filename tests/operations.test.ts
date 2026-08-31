@@ -131,17 +131,23 @@ test("retention deletes only old dated EPUBs/builds and preserves latest files p
   }
 });
 
-test("systemd examples use absolute runtime paths, a morning timer, and no embedded API keys", async () => {
+test("systemd examples run preloaded Docker images with the existing morning timer", async () => {
   const directory = path.join(process.cwd(), "ops", "systemd");
   const serve = await fs.readFile(path.join(directory, "ai-news-assistant-serve.service"), "utf8");
   const run = await fs.readFile(path.join(directory, "ai-news-assistant-run.service"), "utf8");
   const timer = await fs.readFile(path.join(directory, "ai-news-assistant-run.timer"), "utf8");
   const combined = `${serve}\n${run}\n${timer}`;
 
-  assert.match(serve, /ExecStart=\/usr\/bin\/node \/opt\/ai-news-assistant\/dist\/src\/index\.js serve/);
+  assert.match(serve, /Type=oneshot/);
+  assert.match(serve, /RemainAfterExit=yes/);
+  assert.match(serve, /docker compose .*up -d --no-build app/);
   assert.match(run, /Type=oneshot/);
-  assert.match(run, /ExecStart=\/usr\/bin\/node \/opt\/ai-news-assistant\/dist\/src\/index\.js run/);
-  assert.match(combined, /EnvironmentFile=\/etc\/ai-news-assistant\.env/);
+  assert.match(run, /docker compose .*run --rm --pull never app run/);
+  assert.match(combined, /--env-file \/opt\/ai-news-assistant\/\.env/);
+  assert.match(combined, /ops\/homelab\/compose\.yaml/);
+  assert.doesNotMatch(combined, /\/usr\/bin\/node/);
+  assert.doesNotMatch(combined, /docker compose .*\sbuild(?:\s|$)/);
+  assert.doesNotMatch(combined, /docker compose .*--build(?:\s|$)/);
   assert.match(timer, /OnCalendar=\*-\*-\* 06:00:00/);
   assert.match(timer, /RandomizedDelaySec=30min/);
   assert.match(timer, /Persistent=true/);

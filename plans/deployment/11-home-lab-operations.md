@@ -153,7 +153,7 @@ The desired model is:
 - the morning one-shot service runs the already loaded image with:
 
 ```text
-docker compose run --rm --no-build app run
+docker compose run --rm --pull never app run
 ```
 
 - the existing timer starts that service each morning.
@@ -197,7 +197,7 @@ Document the first install on the Lenovo:
 4. create `.env` on the server without committing secrets,
 5. transfer/load a validated image from the strong machine,
 6. set `AI_NEWS_IMAGE` to that immutable local tag,
-7. run `doctor` with `--no-build`,
+7. run `doctor` with `--pull never`,
 8. start `serve` with `--no-build`,
 9. install/enable the systemd timer,
 10. verify `/healthz` and one manual generation when the LLM is available.
@@ -237,7 +237,7 @@ Confirm that:
 - `pipeline.lock` is visible to all one-shot containers,
 - a concurrent manual run cannot duplicate a scheduled run,
 - a failed/unreachable LLM run leaves the previous `latest.epub` available,
-- systemd units invoke Compose with `--no-build`,
+- the serve unit uses `up --no-build` and one-shot units use `run --pull never`,
 - loaded image/tag identity can be inspected easily.
 
 ## Tests and validation
@@ -264,7 +264,7 @@ A manual deployment smoke test should prove:
 
 1. image is built on the strong machine,
 2. image is transferred and loaded on the Lenovo,
-3. `docker compose run --rm --no-build app doctor` succeeds with a dummy model,
+3. `docker compose run --rm --pull never app doctor` succeeds with a dummy model,
 4. `docker compose up -d --no-build` serves `/healthz`,
 5. data survives container recreation,
 6. switching between two locally loaded image tags does not affect persistent data.
