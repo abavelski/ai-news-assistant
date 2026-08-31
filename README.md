@@ -43,7 +43,23 @@ LLM_BASE_URL=http://127.0.0.1:11434
 LLM_MODEL=your-model-name
 ```
 
-For a cloud provider, also set `LLM_API_KEY`. Logs are structured JSON and redact API-key, token, secret, cookie, password, and authorization fields. Set `LOG_LEVEL` to `debug`, `info`, `warn`, or `error`; the default is `info`.
+For a cloud provider, also set `LLM_API_KEY`. OpenAI Chat Completions can be used with conventional models or GPT-5-family models, for example:
+
+```dotenv
+LLM_BASE_URL=https://api.openai.com
+LLM_MODEL=gpt-4.1-mini
+```
+
+or:
+
+```dotenv
+LLM_BASE_URL=https://api.openai.com
+LLM_MODEL=gpt-5-mini
+```
+
+The provider keeps conventional OpenAI-compatible/local request behavior (`temperature` plus `max_tokens`). For GPT-5-family model names it omits legacy sampling fields such as `temperature`/`top_p` and maps `LLM_MAX_OUTPUT_TOKENS` to `max_completion_tokens`. Structured JSON behavior remains prompt-driven and runtime-validated for both article analysis and editorial selection, so local servers are not required to implement an additional `response_format` feature.
+
+Logs are structured JSON and redact API-key, token, secret, cookie, password, and authorization fields. Remote LLM HTTP errors include bounded sanitized diagnostics such as the status, model, error type/code/parameter, and remote message without logging request headers or prompts. Set `LOG_LEVEL` to `debug`, `info`, `warn`, or `error`; the default is `info`.
 
 Validate a checkout before running news ingestion:
 
@@ -84,7 +100,7 @@ Per-article analysis uses the same OpenAI-compatible interface for local endpoin
 
 The article prompt and analysis schema have explicit versions. Cached analysis is reused only when the article content is unchanged and the configured model, prompt version, and analysis version all match. Changing the prompt/schema version therefore deliberately causes re-analysis without changing article storage.
 
-Long article text is bounded deterministically using Unicode grapheme boundaries: the prompt preserves the beginning and end and inserts an explicit omission marker in the middle. Configure the LLM boundary with:
+Long article text is bounded deterministically using Unicode grapheme boundaries: the prompt preserves the beginning and end and inserts an explicit omission marker in the middle. `LLM_TEMPERATURE` applies to conventional models; GPT-5-family Chat Completions intentionally omit that field. `LLM_MAX_OUTPUT_TOKENS` is sent using the token-limit field appropriate to the model family. Configure the LLM boundary with:
 
 ```dotenv
 LLM_TEMPERATURE=0.2

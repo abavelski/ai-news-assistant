@@ -13,10 +13,30 @@ interface ChatCompletionResponse {
   };
 }
 
+export interface ChatCompletionRequest {
+  model: string;
+  messages: LlmMessage[];
+  temperature?: number;
+  max_tokens?: number;
+  max_completion_tokens?: number;
+}
+
+interface RemoteErrorDetails {
+  errorType?: string;
+  errorCode?: string;
+  errorParam?: string;
+  remoteMessage?: string;
+}
+
 interface ProviderDependencies {
   fetchFn?: FetchFunction;
   now?: () => number;
 }
+
+const MAX_REMOTE_ERROR_BYTES = 8_192;
+const MAX_REMOTE_MESSAGE_CHARS = 500;
+const BEARER_VALUE = /\bBearer\s+[^\s,;"']+/gi;
+const LABELED_SECRET = /\b(api[_-]?key|authorization|password|secret|token)(\s*[:=]\s*)[^\s,;"']+/gi;
 
 function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
@@ -40,6 +60,114 @@ function parseUsage(value: ChatCompletionResponse["usage"]): LlmUsage | undefine
   return Object.values(usage).some((entry) => entry !== undefined) ? usage : undefined;
 }
 
+export function isGpt5Family(model: string): boolean {
+  const normalized = model.trim().toLocaleLowerCase("en-US");
+  const unqualified = normalized.includes("/") ? normalized.slice(normalized.lastIndexOf("/") + 1) : normalized;
+  return /^gpt-5(?:$|[-.])/.test(unqualified);
+}
+
+export function buildChatCompletionRequest(config: AppConfig, messages: LlmMessage[]): ChatCompletionRequest {
+  const request: ChatCompletionRequest = {
+    model: config.llmModel,
+    messages
+  };
+
+  if (isGpt5Family(config.llmModel)) {
+    request.max_completion_tokens = config.llmMaxOutputTokens;
+  } else {
+    request.temperature = config.llmTemperature;
+    request.max_tokens = config.llmMaxOutputTokens;
+  }
+
+  return request;
+}
+
+function diagnosticBaseUrl(baseUrl: string): string {
+  try {
+    const parsed = new URL(baseUrl);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return "[invalid-base-url]";
+  }
+}
+
+function sanitizeRemoteText(value: string, apiKey?: string): string {
+  let sanitized = value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+    .replace(BEARER_VALUE, "Bearer [REDACTED]")
+    .replace(LABELED_SECRET, (_match, label: string, separator: string) => `${label}${separator}[REDACTED]`);
+
+  if (apiKey) sanitized = sanitized.split(apiKey).join("[REDACTED]");
+  return sanitized.replace(/\s+/g, " ").trim().slice(0, MAX_REMOTE_MESSAGE_CHARS);
+}
+
+function sanitizeRemoteField(value: unknown, apiKey?: string): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  const sanitized = sanitizeRemoteText(String(value), apiKey);
+  return sanitized || undefined;
+}
+
+async function readBoundedResponseText(response: Response): Promise<string> {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytesRead = 0;
+  let text = "";
+
+  try {
+    while (bytesRead < MAX_REMOTE_ERROR_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const remaining = MAX_REMOTE_ERROR_BYTES - bytesRead;
+      const chunk = value.byteLength > remaining ? value.subarray(0, remaining) : value;
+      bytesRead += chunk.byteLength;
+      text += decoder.decode(chunk, { stream: bytesRead < MAX_REMOTE_ERROR_BYTES });
+      if (value.byteLength > remaining) break;
+    }
+    text += decoder.decode();
+  } catch {
+    // Diagnostic body parsing must never hide the original HTTP status.
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // Response cleanup is best effort only.
+    }
+  }
+
+  return text;
+}
+
+async function readRemoteErrorDetails(response: Response, apiKey?: string): Promise<RemoteErrorDetails> {
+  const raw = await readBoundedResponseText(response);
+  if (!raw.trim()) return {};
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const root = parsed as Record<string, unknown>;
+      const nested = root.error && typeof root.error === "object" && !Array.isArray(root.error)
+        ? root.error as Record<string, unknown>
+        : root;
+      const details: RemoteErrorDetails = {
+        errorType: sanitizeRemoteField(nested.type, apiKey),
+        errorCode: sanitizeRemoteField(nested.code, apiKey),
+        errorParam: sanitizeRemoteField(nested.param, apiKey),
+        remoteMessage: sanitizeRemoteField(nested.message, apiKey)
+      };
+      if (Object.values(details).some((value) => value !== undefined)) return details;
+    }
+  } catch {
+    // Non-JSON responses are represented by a bounded text message below.
+  }
+
+  return { remoteMessage: sanitizeRemoteText(raw, apiKey) || undefined };
+}
+
 export class OpenAiCompatibleProvider implements LlmProvider {
   constructor(
     private readonly config: AppConfig,
@@ -52,18 +180,14 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     const fetchFn = this.dependencies.fetchFn ?? fetch;
     const now = this.dependencies.now ?? Date.now;
     const startedAt = now();
+    const safeBaseUrl = diagnosticBaseUrl(this.config.llmBaseUrl);
 
     let response: Response;
     try {
       response = await fetchFn(`${this.config.llmBaseUrl}/v1/chat/completions`, {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          model: this.config.llmModel,
-          messages,
-          temperature: this.config.llmTemperature,
-          max_tokens: this.config.llmMaxOutputTokens
-        }),
+        body: JSON.stringify(buildChatCompletionRequest(this.config, messages)),
         signal: AbortSignal.timeout(this.config.llmTimeoutMs)
       });
     } catch (cause) {
@@ -75,7 +199,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
         {
           cause,
           context: {
-            baseUrl: this.config.llmBaseUrl,
+            baseUrl: safeBaseUrl,
             model: this.config.llmModel,
             timeoutMs: this.config.llmTimeoutMs,
             latencyMs: Math.max(0, Math.round(now() - startedAt)),
@@ -88,19 +212,19 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 
     if (!response.ok) {
       const retryable = isRetryableStatus(response.status);
-      try {
-        await response.body?.cancel();
-      } catch {
-        // Response cleanup is best effort only.
-      }
-      throw new LlmError(`LLM request failed with HTTP ${response.status} ${response.statusText || "error"}.`, {
+      const remote = await readRemoteErrorDetails(response, this.config.llmApiKey);
+      const latencyMs = Math.max(0, Math.round(now() - startedAt));
+      const statusLabel = `${response.status} ${response.statusText || "error"}`;
+      const remoteSuffix = remote.remoteMessage ? `: ${remote.remoteMessage}` : "";
+      throw new LlmError(`LLM request failed with HTTP ${statusLabel}${remoteSuffix}.`, {
         context: {
-          baseUrl: this.config.llmBaseUrl,
+          baseUrl: safeBaseUrl,
           model: this.config.llmModel,
           status: response.status,
-          latencyMs: Math.max(0, Math.round(now() - startedAt)),
+          latencyMs,
           retryable,
-          kind: "http"
+          kind: "http",
+          ...remote
         }
       });
     }
@@ -112,7 +236,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
       throw new LlmError("LLM response was not valid JSON.", {
         cause,
         context: {
-          baseUrl: this.config.llmBaseUrl,
+          baseUrl: safeBaseUrl,
           model: this.config.llmModel,
           latencyMs: Math.max(0, Math.round(now() - startedAt)),
           retryable: true,
@@ -125,7 +249,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     if (typeof content !== "string" || !content.trim()) {
       throw new LlmError("LLM response contained no message content.", {
         context: {
-          baseUrl: this.config.llmBaseUrl,
+          baseUrl: safeBaseUrl,
           model: this.config.llmModel,
           latencyMs: Math.max(0, Math.round(now() - startedAt)),
           retryable: true,
