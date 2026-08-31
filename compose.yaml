@@ -1,0 +1,35 @@
+services:
+  app:
+    image: ${AI_NEWS_IMAGE:-ai-news-assistant:local}
+    build:
+      context: .
+      target: runtime
+    env_file:
+      - ${AI_NEWS_ENV_FILE:-.env}
+    environment:
+      DATA_DIR: /app/data
+      OUTPUT_DIR: /app/data/public/daily
+      HOST: 0.0.0.0
+      PORT: 8787
+    command: ["serve"]
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${AI_NEWS_BIND_ADDRESS:-0.0.0.0}:${AI_NEWS_HTTP_PORT:-8787}:8787"
+    volumes:
+      - ai-news-data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8787/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  ai-news-data:

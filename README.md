@@ -27,10 +27,70 @@ Meduza RSS
 
 The LLM endpoint can be a cloud API or a local service such as Ollama/llama.cpp/vLLM, as long as it exposes a compatible chat-completions endpoint.
 
-## Setup
+## Docker / Compose runtime
+
+For a Linux home server, Docker Compose is the simplest supported deployment path. The host needs Docker Engine with the Compose plugin; Node.js, npm, native npm build tools, and Pandoc are provided by the image. The same image runs all existing CLI commands: `serve`, `run`, and `doctor`.
+
+Create the local configuration first and set at least `LLM_MODEL` plus the endpoint/key needed by your provider:
 
 ```bash
-npm install
+cp .env.example .env
+$EDITOR .env
+```
+
+Build the image and validate its runtime dependencies:
+
+```bash
+docker compose build
+docker compose run --rm app doctor
+```
+
+Start the long-running delivery service and inspect health from the host:
+
+```bash
+docker compose up -d
+curl -fsS http://127.0.0.1:8787/healthz
+```
+
+By default Compose publishes port `8787` on all host interfaces. `AI_NEWS_BIND_ADDRESS` and `AI_NEWS_HTTP_PORT` in `.env` control only the host-side publish address/port; the container itself always listens on `0.0.0.0:8787`. For example, use `AI_NEWS_BIND_ADDRESS=127.0.0.1` when access should remain host-local. The delivery endpoint has no built-in authentication, so do not expose it directly to the public internet.
+
+Run one edition manually with the same image, configuration, and persistent data:
+
+```bash
+docker compose run --rm app run
+```
+
+Compose stores all application state in the `ai-news-data` named volume mounted at `/app/data`. Inside Docker, `DATA_DIR` is forced to `/app/data` and `OUTPUT_DIR` to `/app/data/public/daily`; host values for those two variables are intentionally overridden. The volume contains `news.sqlite`, article/analysis history, `run-status.json`, build/retention state, dated EPUBs, `latest.epub`, and `latest.json`. Recreating the `app` container or running `docker compose down` does not remove that volume. Do not use `docker compose down -v` unless you intentionally want to delete all persisted application data.
+
+If an OpenAI-compatible LLM runs directly on the Linux Docker host, container loopback cannot reach it. The Compose file maps `host.docker.internal` to Docker's host gateway, so configure:
+
+```dotenv
+LLM_BASE_URL=http://host.docker.internal:11434
+```
+
+For OpenAI or another cloud endpoint, keep the normal HTTPS URL; no special Docker networking is required.
+
+Common lifecycle commands are:
+
+```bash
+docker compose restart app
+docker compose stop
+docker compose start
+docker compose down
+```
+
+A repeatable container smoke test is also available for development/CI. It builds the image unless `AI_NEWS_SKIP_BUILD=1`, runs `doctor` with a dummy model, verifies Pandoc and non-root execution, starts Compose on an ephemeral localhost port, checks `/healthz`, and verifies data survives container recreation without making paid LLM calls:
+
+```bash
+npm run docker:smoke
+```
+
+The existing host-Node/systemd instructions remain available below for non-container deployments. Docker-aware systemd scheduling is a separate deployment task.
+
+## Local development setup
+
+```bash
+npm ci
 cp .env.example .env
 ```
 

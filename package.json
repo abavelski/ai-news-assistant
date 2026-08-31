@@ -14,7 +14,8 @@
     "doctor": "tsx src/index.ts doctor",
     "start": "node dist/src/index.js",
     "test": "node --import tsx --test tests/**/*.test.ts",
-    "check": "npm run build && npm test"
+    "check": "npm run build && npm test",
+    "docker:smoke": "bash scripts/docker-smoke.sh"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
