@@ -1,37 +1,17 @@
-# Implementation plan for coding agents
+# MVP implementation archive
 
-These files are designed to be fed one at a time to Codex, Qwen, or another coding agent. The tasks are intentionally small enough to review and commit independently.
+The server MVP is complete and tested. The original implementation tasks that produced the MVP are retained for historical reference under [`completed/`](completed/).
 
-## How to use
+A concise description of the delivered system is available in [`MVP-SUMMARY.md`](MVP-SUMMARY.md).
 
-For each task:
+## Completed MVP tasks
 
-1. Give the agent the repository plus exactly one task file.
-2. Ask it to inspect the current code before editing.
-3. Require it to run `npm run check` before finishing.
-4. Review the diff and acceptance criteria.
-5. Commit the task separately using the suggested commit message.
-6. Only then move to the next task.
+1. [`00-foundation-hardening.md`](completed/00-foundation-hardening.md)
+2. [`01-meduza-ingestion.md`](completed/01-meduza-ingestion.md)
+3. [`02-storage-dedup.md`](completed/02-storage-dedup.md)
+4. [`03-llm-summarization.md`](completed/03-llm-summarization.md)
+5. [`04-editorial-selection.md`](completed/04-editorial-selection.md)
+6. [`05-epub-rendering.md`](completed/05-epub-rendering.md)
+7. [`06-http-delivery-scheduling.md`](completed/06-http-delivery-scheduling.md)
 
-Agents should preserve the core boundary:
-
-```text
-source -> extraction -> normalized Article -> storage -> analysis -> editorial plan -> renderer -> delivery
-```
-
-Source-specific authentication, browser automation, and parsing must not leak into the editorial or rendering layers.
-
-## Recommended order
-
-1. [`00-foundation-hardening.md`](00-foundation-hardening.md)
-2. [`01-meduza-ingestion.md`](01-meduza-ingestion.md)
-3. [`02-storage-dedup.md`](02-storage-dedup.md)
-4. [`03-llm-summarization.md`](03-llm-summarization.md)
-5. [`04-editorial-selection.md`](04-editorial-selection.md)
-6. [`05-epub-rendering.md`](05-epub-rendering.md)
-7. [`06-http-delivery-scheduling.md`](06-http-delivery-scheduling.md)
-8. [`07-kindle-scribe-sync.md`](07-kindle-scribe-sync.md)
-9. [`08-additional-sources.md`](08-additional-sources.md)
-10. [`09-personalization-and-clustering.md`](09-personalization-and-clustering.md)
-
-Tasks 00–06 complete the server MVP. Task 07 is the separate Scribe-side project. Tasks 08–09 expand the product after the end-to-end morning workflow is stable.
+Tasks that were planned beyond the MVP have been removed. New product work should be planned from the current tested MVP rather than treated as a continuation of the old roadmap.

@@ -190,7 +190,7 @@ src/
   delivery/      local HTTP delivery
   operations/    run locking, status, and retention
 ops/systemd/     home-server service/timer examples
-plans/           agent-ready implementation tasks
+plans/           MVP summary and completed task archive
 tests/           lightweight Node test runner tests
 ```
 
@@ -198,6 +198,6 @@ tests/           lightweight Node test runner tests
 
 This remains a focused personal-server service rather than a general hosted news platform. Broader integration tests, additional source adapters, source-specific compliance work, and device-specific sync remain separate tasks. Keep downloaded full text private and only ingest content your accounts are authorized to access.
 
-## Agent task plan
+## MVP status
 
-Start with [`plans/README.md`](plans/README.md). Each task is written so it can be handed independently to Codex or a local coding model, with scope, acceptance criteria, tests, and non-goals.
+The server MVP is complete and tested. See [`plans/MVP-SUMMARY.md`](plans/MVP-SUMMARY.md) for a concise implementation summary; the original completed task specifications are retained under [`plans/completed/`](plans/completed/) as historical implementation records.
