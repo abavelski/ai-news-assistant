@@ -2,15 +2,14 @@
 
 The server MVP is complete and tested. The original MVP implementation tasks are retained for historical reference under [`completed/`](completed/), with a concise delivered-system summary in [`MVP-SUMMARY.md`](MVP-SUMMARY.md).
 
-The next active workstream is packaging the MVP for simple Linux home-lab installation with Docker and Docker Compose. Those tasks live under [`deployment/`](deployment/).
+The active workstream is packaging and operating the MVP on a weak Linux home-lab server using Docker and Docker Compose. Deployment images are built on a stronger local machine and transferred directly over the LAN; only the Git repository is published.
 
-## Active deployment tasks
+## Deployment tasks
 
-1. [`10-docker-runtime.md`](deployment/10-docker-runtime.md) — reproducible Docker image, Compose runtime, persistent data, and container smoke tests.
-2. [`11-home-lab-operations.md`](deployment/11-home-lab-operations.md) — Docker-aware systemd scheduling, install/update/rollback workflow, and host/local-LLM networking.
-3. [`12-ghcr-publishing.md`](deployment/12-ghcr-publishing.md) — multi-architecture GHCR publishing and release/tag workflow.
+1. [`10-docker-runtime.md`](deployment/10-docker-runtime.md) — completed reproducible Docker image, Compose runtime, persistent data contract, and container smoke tests.
+2. [`11-home-lab-operations.md`](deployment/11-home-lab-operations.md) — next: build/export on a strong local machine, SCP/SSH image transfer to the Lenovo, `docker load`/`--no-build` deployment, Docker-aware systemd scheduling, persistent backups/rollback, and a separate LAN LLM endpoint.
 
-Task 10 should be completed first. Task 11 may use locally built images initially and should remain compatible with Task 12 once published images are available. Task 12 depends on the Docker image contract established in Task 10.
+There is no container-registry publishing task. GHCR/Docker Hub publishing is intentionally out of scope for the current deployment model. Wake-on-LAN for the separate gaming-rig LLM may be planned later as its own task.
 
 ## Completed MVP tasks
 
