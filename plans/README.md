@@ -1,8 +1,16 @@
-# MVP implementation archive
+# Implementation plans
 
-The server MVP is complete and tested. The original implementation tasks that produced the MVP are retained for historical reference under [`completed/`](completed/).
+The server MVP is complete and tested. The original MVP implementation tasks are retained for historical reference under [`completed/`](completed/), with a concise delivered-system summary in [`MVP-SUMMARY.md`](MVP-SUMMARY.md).
 
-A concise description of the delivered system is available in [`MVP-SUMMARY.md`](MVP-SUMMARY.md).
+The next active workstream is packaging the MVP for simple Linux home-lab installation with Docker and Docker Compose. Those tasks live under [`deployment/`](deployment/).
+
+## Active deployment tasks
+
+1. [`10-docker-runtime.md`](deployment/10-docker-runtime.md) — reproducible Docker image, Compose runtime, persistent data, and container smoke tests.
+2. [`11-home-lab-operations.md`](deployment/11-home-lab-operations.md) — Docker-aware systemd scheduling, install/update/rollback workflow, and host/local-LLM networking.
+3. [`12-ghcr-publishing.md`](deployment/12-ghcr-publishing.md) — multi-architecture GHCR publishing and release/tag workflow.
+
+Task 10 should be completed first. Task 11 may use locally built images initially and should remain compatible with Task 12 once published images are available. Task 12 depends on the Docker image contract established in Task 10.
 
 ## Completed MVP tasks
 
@@ -13,5 +21,3 @@ A concise description of the delivered system is available in [`MVP-SUMMARY.md`]
 5. [`04-editorial-selection.md`](completed/04-editorial-selection.md)
 6. [`05-epub-rendering.md`](completed/05-epub-rendering.md)
 7. [`06-http-delivery-scheduling.md`](completed/06-http-delivery-scheduling.md)
-
-Tasks that were planned beyond the MVP have been removed. New product work should be planned from the current tested MVP rather than treated as a continuation of the old roadmap.
