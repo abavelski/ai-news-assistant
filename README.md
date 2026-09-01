@@ -19,13 +19,16 @@ Meduza RSS
 
 ## Supported runtime
 
+For local development and source builds:
+
 - Node.js 22 or newer
 - npm 10 or newer
 - SQLite build prerequisites needed by `better-sqlite3`
 - Pandoc available as `pandoc`
-- An OpenAI-compatible `/v1/chat/completions` endpoint
 
-The LLM endpoint can be a cloud API or a local service such as Ollama/llama.cpp/vLLM, as long as it exposes a compatible chat-completions endpoint.
+For the production Docker deployment, the home server only needs Docker Engine with the Docker Compose plugin plus the normal Git/SSH administration tools. Node.js, npm, native build tools, and Pandoc are inside the image and are not installed on the low-resource server.
+
+All deployments need an OpenAI-compatible `/v1/chat/completions` endpoint. The endpoint can be a cloud API or a local service such as Ollama/llama.cpp/vLLM, as long as it exposes a compatible chat-completions endpoint.
 
 ## Docker / Compose runtime
 
@@ -85,7 +88,7 @@ A repeatable container smoke test is also available for development/CI. It build
 npm run docker:smoke
 ```
 
-For the low-resource home-lab deployment, build and validate the image on a stronger machine, export it with `docker save`, transfer it over the trusted LAN, and run only the preloaded image on the server. See [`ops/systemd/README.md`](ops/systemd/README.md) for the complete local-image transfer, bind-mounted storage, systemd scheduling, update, backup, and rollback workflow.
+For the low-resource home-lab deployment, use the production installation workflow below: build and validate the image on a stronger machine, export it with `docker save`, transfer it over the trusted LAN, and run only the preloaded image on the server.
 
 ## Local development setup
 
@@ -242,17 +245,54 @@ GET /daily/latest.epub
 
 The server accepts `SIGTERM`/`SIGINT` and stops accepting requests gracefully before exiting. Default bind is `0.0.0.0:8787`; for deployment, prefer a private LAN address or firewall-restricted LAN exposure.
 
-## Home-server operations
+## Production home-lab installation
 
-The production home-lab path uses Docker Compose rather than host Node.js. The weak server runs only prebuilt, locally transferred images; it does not build or pull application images.
+The production home-lab path is intentionally different from the generic Compose development workflow above. A stronger machine builds and validates an immutable Docker image, transfers that image over SSH/SCP, and the low-resource server only runs the already loaded image. No container registry is required, and the server does not build or pull application images.
 
-Build and validate a clean Git revision on the stronger machine:
+The examples below assume the server checkout is `/opt/ai-news-assistant`, persistent data is `/var/lib/ai-news-assistant`, the image repository is `ai-news-assistant`, and the target server is reachable through SSH as `homelab`.
+
+### 1. Prepare the stronger build machine
+
+Install Git, Docker Engine with the Compose plugin, Node.js 22+, and npm 10+. Clone the repository or update an existing clean checkout:
+
+```bash
+git clone https://github.com/abavelski/ai-news-assistant.git
+cd ai-news-assistant
+npm ci
+npm run check
+```
+
+For an existing checkout, use `git pull --ff-only` before building. The packaging helper refuses a dirty working tree, so commit or stash local changes first.
+
+Build, smoke-test, tag, export, and checksum the production image:
 
 ```bash
 ./scripts/build-deployment-image.sh
+git rev-parse --short=12 HEAD
 ```
 
-Transfer the resulting `artifacts/ai-news-assistant-<git-sha>.tar.gz` over SSH and load it on the server:
+The script defaults to `linux/amd64`, tags the image as `ai-news-assistant:<12-character-git-sha>`, runs the non-paid Docker smoke suite, verifies the image platform, and creates:
+
+```text
+artifacts/ai-news-assistant-<git-sha>.tar.gz
+artifacts/ai-news-assistant-<git-sha>.tar.gz.sha256
+```
+
+### 2. Prepare the home server
+
+Install Docker Engine, the Docker Compose plugin, Git, SSH administration tools, `gzip`, and `sha256sum`. The server does **not** need Node.js, npm, Pandoc, or compiler/build packages.
+
+Install the public checkout and create a root-controlled configuration file:
+
+```bash
+sudo git clone https://github.com/abavelski/ai-news-assistant.git /opt/ai-news-assistant
+cd /opt/ai-news-assistant
+sudo cp .env.example .env
+sudo chmod 0600 .env
+sudo $EDITOR .env
+```
+
+Transfer the previously built image from the stronger machine. The SSH account used here must be able to run Docker on the server:
 
 ```bash
 ./scripts/transfer-deployment-image.sh \
@@ -260,20 +300,134 @@ Transfer the resulting `artifacts/ai-news-assistant-<git-sha>.tar.gz` over SSH a
   homelab
 ```
 
-The production override [`ops/homelab/compose.yaml`](ops/homelab/compose.yaml) uses a host-visible persistent directory (default `/var/lib/ai-news-assistant`) and refuses registry pulls. The long-running delivery service starts with `up -d --no-build`; scheduled/manual one-shot commands use `run --rm --pull never` because Compose `run` does not provide a `--no-build` option.
+The helper transfers the archive and checksum, verifies the checksum remotely, loads the image with `docker load`, and removes only the transferred archive/checksum. Previously loaded image tags are intentionally retained for rollback.
 
-The normal local LLM is a separate LAN service, for example:
+### 3. Configure the production image, storage, and LLM
+
+Set the actual loaded image tag and deployment settings in `/opt/ai-news-assistant/.env`:
 
 ```dotenv
+AI_NEWS_IMAGE=ai-news-assistant:<git-sha>
+AI_NEWS_DATA_DIR=/var/lib/ai-news-assistant
+AI_NEWS_BIND_ADDRESS=192.168.1.20
+AI_NEWS_HTTP_PORT=8787
+
 LLM_BASE_URL=http://gaming-rig.home.arpa:11434
 LLM_MODEL=your-model-name
 ```
 
-The LLM host must listen on a LAN-reachable interface and allow the server through its firewall. If that machine is unavailable, a generation attempt may fail, but the existing degraded-health behavior keeps the previous successful `latest.epub` available.
+Use the server's real private-LAN address for `AI_NEWS_BIND_ADDRESS`. For a cloud LLM, use its HTTPS base URL and put `LLM_API_KEY` only in this protected `.env` file.
 
-Docker-aware systemd examples live in [`ops/systemd/`](ops/systemd/). The existing timer still schedules generation from 06:00 with up to 30 minutes randomized delay, and every run shares the same bind-mounted `pipeline.lock`, SQLite database, status file, and EPUB directory.
+For a separate LAN LLM, the LLM service must listen on a LAN-reachable interface and its firewall must allow connections from the home server. A stable local DNS name or DHCP reservation is preferable to an address that changes frequently.
 
-See [`ops/systemd/README.md`](ops/systemd/README.md) for the full first-install, local image transfer/load, permissions, systemd setup, update, rollback, backup, logging, LAN exposure, and manual image-cleanup procedures.
+Create the persistent data directory using the UID/GID configured inside the loaded runtime image rather than assuming a numeric user id:
+
+```bash
+IMAGE=ai-news-assistant:<git-sha>
+APP_UID="$(sudo docker run --rm --entrypoint id "$IMAGE" -u)"
+APP_GID="$(sudo docker run --rm --entrypoint id "$IMAGE" -g)"
+sudo install -d -m 0750 -o "$APP_UID" -g "$APP_GID" /var/lib/ai-news-assistant
+```
+
+Do not use `chmod 777`. SQLite state, run status, locks, dated EPUBs, `latest.epub`, and `latest.json` all live under this directory and survive container/image replacement.
+
+### 4. Validate the installation without building or pulling
+
+The production override [`ops/homelab/compose.yaml`](ops/homelab/compose.yaml) replaces the development named volume with the host-visible data directory and sets `pull_policy: never`.
+
+Validate the merged configuration:
+
+```bash
+cd /opt/ai-news-assistant
+sudo docker compose \
+  --env-file .env \
+  -f compose.yaml \
+  -f ops/homelab/compose.yaml \
+  config
+```
+
+Run the built-in diagnostics using only the preloaded image:
+
+```bash
+sudo docker compose \
+  --env-file .env \
+  -f compose.yaml \
+  -f ops/homelab/compose.yaml \
+  run --rm --pull never app doctor
+```
+
+Start the delivery service without allowing a build:
+
+```bash
+sudo docker compose \
+  --env-file .env \
+  -f compose.yaml \
+  -f ops/homelab/compose.yaml \
+  up -d --no-build app
+```
+
+Then verify health:
+
+```bash
+curl -fsS http://192.168.1.20:8787/healthz
+```
+
+`docker compose run` does not provide a `--no-build` option. The one-shot commands therefore use `--pull never` together with the production override's `pull_policy: never`; the long-running service uses `up -d --no-build`. A missing image fails locally instead of causing the server to build or pull one.
+
+### 5. Install the systemd service and morning timer
+
+The committed units assume the checkout path `/opt/ai-news-assistant` and Docker at `/usr/bin/docker`:
+
+```bash
+cd /opt/ai-news-assistant
+sudo install -m 0644 ops/systemd/ai-news-assistant-serve.service /etc/systemd/system/
+sudo install -m 0644 ops/systemd/ai-news-assistant-run.service /etc/systemd/system/
+sudo install -m 0644 ops/systemd/ai-news-assistant-run.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ai-news-assistant-serve.service
+sudo systemctl enable --now ai-news-assistant-run.timer
+```
+
+The timer starts generation at 06:00 with up to 30 minutes randomized delay. Run a generation manually with:
+
+```bash
+sudo systemctl start ai-news-assistant-run.service
+journalctl -u ai-news-assistant-run.service -f
+```
+
+Scheduled and manual runs share the same bind-mounted `pipeline.lock`, so a concurrent second run exits cleanly rather than creating duplicate work.
+
+### 6. Normal updates and rollback
+
+For an update, first build and transfer a new immutable image from the stronger machine:
+
+```bash
+git pull --ff-only
+npm ci
+npm run check
+./scripts/build-deployment-image.sh
+./scripts/transfer-deployment-image.sh \
+  artifacts/ai-news-assistant-<new-git-sha>.tar.gz \
+  homelab
+```
+
+Then update the checkout on the server, change `AI_NEWS_IMAGE` in `.env` to the newly loaded tag, and recreate the service without building:
+
+```bash
+cd /opt/ai-news-assistant
+sudo git pull --ff-only
+sudo $EDITOR .env
+sudo docker compose --env-file .env -f compose.yaml -f ops/homelab/compose.yaml up -d --no-build app
+curl -fsS http://192.168.1.20:8787/healthz
+```
+
+If the committed systemd unit files changed, reinstall them and run `sudo systemctl daemon-reload`. A normal image-only update does not require reinstalling the timer.
+
+For rollback, set `AI_NEWS_IMAGE` back to a previously loaded known-good SHA tag and run the same `up -d --no-build` command. The persistent `/var/lib/ai-news-assistant` directory is not replaced. Keep at least one known-good old image until the new deployment has been verified.
+
+The normal local LLM may be on a separate machine. If that machine is unavailable, a generation attempt can fail, but the existing degraded-health behavior keeps the previous successful `latest.epub` available for delivery.
+
+See [`ops/systemd/README.md`](ops/systemd/README.md) for the extended operations guide covering timer overrides, backups, journal/Compose logging, firewall/LAN exposure, image cleanup, and detailed rollback procedures.
 
 Do not expose the unauthenticated delivery port directly to the public internet.
 
