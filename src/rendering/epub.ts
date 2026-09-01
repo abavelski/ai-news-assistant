@@ -103,21 +103,22 @@ function articleMarkdown(item: EditionArticle, includeFullArticles: boolean, lan
     ""
   ];
 
-  if (analysis.keyFacts.length > 0) {
+  if (analysis.keyPoints.length > 0) {
     lines.push(
-      "### Key facts",
+      article.contentKind === "discussion" ? "### Key points" : "### Key facts",
       "",
-      ...analysis.keyFacts.map((fact) => `- ${sanitizeBlock(fact).replace(/\n+/g, " ")}`),
+      ...analysis.keyPoints.map((fact) => `- ${sanitizeBlock(fact).replace(/\n+/g, " ")}`),
       ""
     );
   }
 
   if (includeFullArticles) {
-    lines.push("### Full article", "", sanitizeBlock(article.text), "");
+    lines.push(article.contentKind === "discussion" ? "### Discussion snapshot" : "### Full article", "", sanitizeBlock(article.text), "");
   }
 
   const originalUrl = safeUrl(article.url);
-  lines.push(originalUrl ? `[Original article](<${originalUrl}>)` : `Original: ${escapeInlineMarkdown(article.url)}`, "");
+  const originalLabel = article.contentKind === "discussion" ? "Original discussion" : "Original article";
+  lines.push(originalUrl ? `[${originalLabel}](<${originalUrl}>)` : `Original: ${escapeInlineMarkdown(article.url)}`, "");
   return lines;
 }
 

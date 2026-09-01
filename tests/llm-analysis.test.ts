@@ -17,7 +17,7 @@ const validPayload = {
   importance: 73,
   recommended: true,
   reason: "Material development",
-  keyFacts: ["Fact one", "Fact two"]
+  keyPoints: ["Fact one", "Fact two"]
 };
 
 function article(): Article & { id: number } {
@@ -29,6 +29,8 @@ function article(): Article & { id: number } {
     title: "Story 42",
     publishedAt: "2026-08-29T08:00:00.000Z",
     language: "ru",
+    contentKind: "article",
+    sourceContext: {},
     text: "Beginning " + "body ".repeat(1000) + " ending 👩‍💻",
     contentHtml: "<p>body</p>",
     contentHash: "hash",

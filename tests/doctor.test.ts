@@ -75,6 +75,7 @@ test("runDoctor aggregates directory, LLM, and Pandoc checks", async () => {
       "data-directory",
       "output-directory",
       "llm-configuration",
+      "sources",
       "pandoc"
     ]);
   } finally {

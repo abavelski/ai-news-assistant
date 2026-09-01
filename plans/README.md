@@ -6,8 +6,7 @@ The server MVP and home-lab deployment are complete. Completed implementation ta
 
 The next workstream generalizes the single-source Meduza pipeline and then adds Reddit discussion digests.
 
-1. [`13-multi-source-foundation.md`](sources/13-multi-source-foundation.md) — source registry, persistent source configuration, source-specific content materialization, multi-source orchestration, mixed-source editorial selection, and contracts intended to be reused by a later admin GUI.
-2. [`14-reddit-discussions.md`](sources/14-reddit-discussions.md) — OAuth Reddit ingestion, configurable subreddit subscriptions, bounded thread/comment materialization, discussion-aware LLM analysis, source-aware rendering, rate limiting, and privacy/retention safeguards.
+1. [`14-reddit-discussions.md`](sources/14-reddit-discussions.md) — OAuth Reddit ingestion, configurable subreddit subscriptions, bounded thread/comment materialization, discussion-aware LLM analysis, source-aware rendering, rate limiting, and privacy/retention safeguards.
 
 See [`sources/README.md`](sources/README.md) for the architecture and sequencing rationale.
 
@@ -24,5 +23,6 @@ The admin GUI is intentionally not part of these tasks. The source configuration
 7. [`06-http-delivery-scheduling.md`](completed/06-http-delivery-scheduling.md)
 8. [`10-docker-runtime.md`](completed/10-docker-runtime.md)
 9. [`11-home-lab-operations.md`](completed/11-home-lab-operations.md)
+10. [`13-multi-source-foundation.md`](completed/13-multi-source-foundation.md)
 
 There is no container-registry publishing task. Production images continue to be built on a stronger local machine and transferred directly to the home server. Wake-on-LAN for the separate gaming-rig LLM remains a possible future task.

@@ -28,6 +28,8 @@ function item(id: number, topic: string, title = `Story ${id}`, text = "word ".r
       title,
       publishedAt: `2026-08-29T${String(10 + id).padStart(2, "0")}:00:00.000Z`,
       language: "ru",
+      contentKind: "article",
+      sourceContext: {},
       text,
       contentHtml: `<p>${text}</p>`,
       contentHash: `hash-${id}`,
@@ -40,7 +42,7 @@ function item(id: number, topic: string, title = `Story ${id}`, text = "word ".r
       importance: 80 - id,
       recommended: true,
       reason: `Почему это важно ${id}`,
-      keyFacts: [`Факт ${id}`],
+      keyPoints: [`Факт ${id}`],
       analyzedAt: "2026-08-29T18:01:00.000Z",
       modelName: "test-model",
       promptVersion: "article-analysis-v1",
@@ -215,5 +217,29 @@ test("missing or empty Pandoc output is rejected before latest EPUB replacement"
     } finally {
       await fs.rm(dataDir, { recursive: true, force: true });
     }
+  }
+});
+
+
+test("discussion content uses neutral key-point and source-link labels", async () => {
+  const { dataDir, config } = await tempConfig(true);
+  try {
+    const discussion = item(7, "Community");
+    discussion.article.contentKind = "discussion";
+    discussion.article.sourceId = "fixture:community";
+    discussion.article.url = "https://example.test/discussion/7";
+    discussion.article.sourceContext = { community: "fixture" };
+    const markdown = buildEditionMarkdown({
+      config,
+      editionDate: "2026-08-29",
+      plan: { overview: "Overview", selectedArticleIds: [7] },
+      selected: [discussion]
+    });
+    assert.match(markdown, /### Key points/);
+    assert.match(markdown, /### Discussion snapshot/);
+    assert.match(markdown, /\[Original discussion\]/);
+    assert.doesNotMatch(markdown, /### Key facts/);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
   }
 });

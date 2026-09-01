@@ -133,6 +133,36 @@ npm run dev -- doctor
 
 `doctor` does not fetch news. It verifies that the configured data and output directories are writable, that the LLM settings needed by `run` are present, and that Pandoc is available on `PATH`.
 
+## Source configuration
+
+Source instances are now stored as validated, non-secret rows in `news.sqlite`. On an existing or fresh installation with no source rows, the application bootstraps one enabled `meduza` source from `MEDUZA_RSS_URL`. After that first bootstrap, the persisted Meduza `rssUrl` is authoritative; changing `MEDUZA_RSS_URL` alone does not overwrite it.
+
+Source credentials never belong in SQLite. Source-specific API keys, OAuth secrets, bearer tokens, and passwords remain in the protected process environment. The source service rejects secret-like settings keys so the later admin GUI can safely use the same configuration boundary.
+
+Until the admin GUI exists, use the scriptable CLI:
+
+```bash
+# Docker deployment
+docker compose run --rm app sources list
+docker compose run --rm app sources types
+
+# Local source checkout
+npm run dev -- sources list
+npm run dev -- sources types
+```
+
+The generic add/enable/disable commands are:
+
+```text
+sources add <type> <id> '<settings-json>' [display-name]
+sources enable <id>
+sources disable <id>
+```
+
+For example, a second Meduza-compatible source instance can be created with `sources add meduza meduza:alternate '{"rssUrl":"https://example.test/feed.xml"}' "Alternate feed"`. Each source instance has its own enabled state, checkpoint, and compact last-run status. Reddit is **not** available yet; Task 14 will register the Reddit source type and its typed settings on this same service/registry.
+
+`EDITORIAL_MAX_PER_SOURCE` optionally limits how many selected items may come from one source instance. Its default equals `EDITION_MAX_ARTICLES`, preserving the previous single-Meduza behavior while allowing a tighter cap once multiple sources are enabled.
+
 ## Meduza ingestion
 
 Meduza discovery is RSS-only. Feed and article requests use the same bounded timeout/retry policy, and article downloads are intentionally sequential with a small delay between requests. URL variants are normalized before discovery deduplication, while extraction prefers the page's canonical Meduza URL and publication metadata when available.
@@ -178,7 +208,7 @@ Successful analysis rows record the model name, prompt and analysis versions, to
 
 ## Editorial selection
 
-The second-pass editor receives article metadata and validated analyses only: ids, source, titles, publication times, topics, summaries, reasons, key facts, importance, and recommendation status. Raw article bodies and HTML are never included in the editorial prompt. The editorial response is strictly validated; unknown ids, duplicate ids, empty or over-limit selections, topic-cap violations, near-duplicate coverage, malformed JSON, or a provider failure all trigger the deterministic fallback instead of being silently repaired.
+The second-pass editor receives article metadata and validated analyses only: ids, source, titles, publication times, topics, summaries, reasons, key points, importance, and recommendation status. Raw article bodies and HTML are never included in the editorial prompt. The editorial response is strictly validated; unknown ids, duplicate ids, empty or over-limit selections, topic-cap violations, near-duplicate coverage, malformed JSON, or a provider failure all trigger the deterministic fallback instead of being silently repaired.
 
 `EDITION_MAX_ARTICLES` remains the overall story limit. `EDITORIAL_MAX_PER_TOPIC` controls topic balance and defaults to 3 (or the edition limit when that is smaller):
 
@@ -192,7 +222,7 @@ The fallback ranks stories deterministically using importance, recommendation st
 
 ## EPUB rendering
 
-The EPUB renderer builds a newspaper-style hierarchy with a Morning Brief, Top Stories, repeated-topic sections when useful, and Other Headlines for the remaining selected stories. Each story includes source attribution, publication time, estimated reading time, summary, importance context, key facts, and the original source URL. `INCLUDE_FULL_ARTICLES` continues to control whether sanitized article text is embedded after the summary.
+The EPUB renderer builds a newspaper-style hierarchy with a Morning Brief, Top Stories, repeated-topic sections when useful, and Other Headlines for the remaining selected stories. Each story includes source attribution, publication time, estimated reading time, summary, importance context, key points, and the original source URL. `INCLUDE_FULL_ARTICLES` continues to control whether sanitized article text is embedded after the summary.
 
 Rendering assets live under `src/rendering/assets/`: monochrome-friendly CSS controls typography and page breaks, while a metadata file supplies the stable author/publisher identity. Every EPUB carries a title, edition date, language, publisher/author, and deterministic `urn:ai-news-assistant:edition:YYYY-MM-DD` identifier. Pandoc is run with `SOURCE_DATE_EPOCH` pinned to the edition date so identical input produces identical EPUB bytes.
 

@@ -1,9 +1,16 @@
+export type ContentKind = "article" | "discussion";
+
+export type SourceContextValue = string | number | boolean | null;
+export type SourceContext = Record<string, SourceContextValue>;
+
 export interface DiscoveredItem {
   sourceId: string;
   externalId: string;
   url: string;
   title: string;
   publishedAt: string;
+  contentKind: ContentKind;
+  context: SourceContext;
 }
 
 export interface Article {
@@ -15,6 +22,8 @@ export interface Article {
   author?: string;
   publishedAt: string;
   language: string;
+  contentKind: ContentKind;
+  sourceContext: SourceContext;
   text: string;
   contentHtml: string;
   contentHash: string;
@@ -34,7 +43,7 @@ export interface ArticleAnalysis extends AnalysisIdentity {
   importance: number;
   recommended: boolean;
   reason: string;
-  keyFacts: string[];
+  keyPoints: string[];
   analyzedAt: string;
   latencyMs: number;
   promptTokens?: number;

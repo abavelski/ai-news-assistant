@@ -1,5 +1,6 @@
 import { assertPipelineConfig, loadConfig, loadLocalEnv } from "./config.js";
 import { startDeliveryServer } from "./delivery/server.js";
+import { ConfigurationError } from "./errors.js";
 import { runDoctor } from "./doctor.js";
 import { OpenAiCompatibleProvider } from "./llm/openai-compatible.js";
 import { configureLogging, logger } from "./logging.js";
@@ -7,7 +8,71 @@ import { pruneRetention } from "./operations/retention.js";
 import { acquirePipelineRunLock } from "./operations/run-lock.js";
 import { recordRunFailed, recordRunStarted, recordRunSucceeded } from "./operations/status.js";
 import { runPipeline } from "./pipeline.js";
-import { MeduzaSource } from "./sources/meduza.js";
+import { createDefaultSourceRegistry } from "./sources/registry.js";
+import { SourceConfigService } from "./sources/service.js";
+import { SourceConfigRepository } from "./storage/source-config.js";
+
+function parseSettingsJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch (cause) {
+    throw new ConfigurationError("Source settings must be provided as valid JSON.", { cause });
+  }
+}
+
+async function runSourcesCommand(
+  config: ReturnType<typeof loadConfig>,
+  args: string[]
+): Promise<void> {
+  const registry = createDefaultSourceRegistry();
+  const repository = new SourceConfigRepository(config.dataDir);
+  const service = new SourceConfigService(repository, registry);
+  try {
+    service.bootstrapDefaultMeduza(config.meduzaRssUrl);
+    const subcommand = args[0] ?? "list";
+
+    if (subcommand === "list") {
+      process.stdout.write(JSON.stringify({ sources: service.listWithStatus() }, null, 2) + "\n");
+      return;
+    }
+
+    if (subcommand === "types") {
+      process.stdout.write(JSON.stringify({ sourceTypes: registry.listTypes() }, null, 2) + "\n");
+      return;
+    }
+
+    if (subcommand === "add") {
+      const [type, id, settingsJson, displayName] = args.slice(1);
+      if (!type || !id || !settingsJson) {
+        throw new ConfigurationError(
+          "Usage: sources add <type> <id> '<settings-json>' [display-name]"
+        );
+      }
+      const created = service.create({
+        type,
+        id,
+        settings: parseSettingsJson(settingsJson),
+        displayName
+      });
+      process.stdout.write(JSON.stringify(created, null, 2) + "\n");
+      return;
+    }
+
+    if (subcommand === "enable" || subcommand === "disable") {
+      const id = args[1];
+      if (!id) throw new ConfigurationError(`Usage: sources ${subcommand} <id>`);
+      const updated = service.setEnabled(id, subcommand === "enable");
+      process.stdout.write(JSON.stringify(updated, null, 2) + "\n");
+      return;
+    }
+
+    throw new ConfigurationError(
+      `Unknown sources subcommand ${JSON.stringify(subcommand)}. Use list, types, add, enable, or disable.`
+    );
+  } finally {
+    repository.close();
+  }
+}
 
 async function main(): Promise<void> {
   loadLocalEnv();
@@ -50,9 +115,20 @@ async function main(): Promise<void> {
     const { lock } = lockResult;
     try {
       await recordRunStarted(config.dataDir);
-      const source = new MeduzaSource(config);
+      const registry = createDefaultSourceRegistry();
+      const repository = new SourceConfigRepository(config.dataDir);
+      let adapters;
+      try {
+        const service = new SourceConfigService(repository, registry);
+        service.bootstrapDefaultMeduza(config.meduzaRssUrl);
+        const sourceConfigs = service.assertRunnable().sort((left, right) => left.id.localeCompare(right.id));
+        adapters = sourceConfigs.map((sourceConfig) => registry.createAdapter(sourceConfig, config));
+      } finally {
+        repository.close();
+      }
+
       const llm = new OpenAiCompatibleProvider(config);
-      const result = await runPipeline(config, source, llm);
+      const result = await runPipeline(config, adapters, llm);
 
       try {
         const retention = await pruneRetention(config);
@@ -65,7 +141,8 @@ async function main(): Promise<void> {
       log.info("pipeline generated edition", {
         epubPath: result.epubPath,
         selectedCount: result.selectedCount,
-        editionDate: result.editionDate
+        editionDate: result.editionDate,
+        sourceCount: adapters.length
       });
       return;
     } catch (error) {
@@ -91,11 +168,23 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "sources") {
+    await runSourcesCommand(config, process.argv.slice(3));
+    return;
+  }
+
   process.stdout.write(
     "ai-news-assistant\n\nCommands:\n" +
-    "  run     Fetch, analyze, and build today's EPUB (non-overlapping)\n" +
-    "  serve   Serve /healthz, /daily/latest.json, and /daily/latest.epub\n" +
-    "  doctor  Validate directories, LLM settings, and Pandoc\n"
+    "  run      Fetch, analyze, and build today's EPUB from all enabled sources\n" +
+    "  serve    Serve /healthz, /daily/latest.json, and /daily/latest.epub\n" +
+    "  doctor   Validate directories, LLM settings, sources, and Pandoc\n" +
+    "  sources  List and manage persisted non-secret source configuration\n\n" +
+    "Source commands:\n" +
+    "  sources list\n" +
+    "  sources types\n" +
+    "  sources add <type> <id> '<settings-json>' [display-name]\n" +
+    "  sources enable <id>\n" +
+    "  sources disable <id>\n"
   );
 }
 

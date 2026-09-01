@@ -187,6 +187,46 @@ export const MIGRATIONS: Migration[] = [
         ALTER TABLE editions ADD COLUMN editorial_selection_method TEXT NOT NULL DEFAULT 'legacy';
       `);
     }
+  },
+  {
+    version: 5,
+    name: "005_multi_source_configuration_and_content_kind",
+    up(db) {
+      db.exec(`
+        ALTER TABLE articles ADD COLUMN content_kind TEXT NOT NULL DEFAULT 'article';
+        ALTER TABLE articles ADD COLUMN source_context_json TEXT NOT NULL DEFAULT '{}';
+        ALTER TABLE article_versions ADD COLUMN content_kind TEXT NOT NULL DEFAULT 'article';
+        ALTER TABLE article_versions ADD COLUMN source_context_json TEXT NOT NULL DEFAULT '{}';
+
+        CREATE TABLE IF NOT EXISTS source_configs (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL,
+          enabled INTEGER NOT NULL,
+          display_name TEXT NOT NULL,
+          settings_version INTEGER NOT NULL,
+          settings_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS source_run_status (
+          source_id TEXT PRIMARY KEY,
+          source_type TEXT NOT NULL,
+          last_attempt_at TEXT NOT NULL,
+          last_success_at TEXT,
+          checkpoint TEXT,
+          discovered_count INTEGER NOT NULL DEFAULT 0,
+          processed_count INTEGER NOT NULL DEFAULT 0,
+          failed_count INTEGER NOT NULL DEFAULT 0,
+          error_code TEXT,
+          error_message TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_source_configs_enabled ON source_configs(enabled, id);
+        CREATE INDEX IF NOT EXISTS idx_source_configs_type ON source_configs(type, id);
+        CREATE INDEX IF NOT EXISTS idx_articles_content_kind ON articles(content_kind);
+      `);
+    }
   }
 ];
 

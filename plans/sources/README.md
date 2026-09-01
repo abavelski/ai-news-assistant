@@ -68,11 +68,11 @@ The normalized model must still keep enough durable identity and metadata for de
 
 ## Sequence
 
-### Task 13 — Multi-source foundation
+### Task 13 — Multi-source foundation (completed)
 
 Make Meduza run through the generalized interfaces, introduce persistent source configuration, process multiple enabled source instances, and make the analysis/editorial/rendering domain aware of content kinds such as `article` and `discussion`.
 
-This task must be complete and fully backward-compatible before Reddit is added.
+Task 13 is complete and archived at [`../completed/13-multi-source-foundation.md`](../completed/13-multi-source-foundation.md). Reddit now builds on its persisted source configuration/service/registry contracts.
 
 ### Task 14 — Reddit discussions
 

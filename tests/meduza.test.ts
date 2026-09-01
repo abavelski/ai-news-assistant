@@ -33,4 +33,6 @@ test("Meduza discovery is RSS-driven and deduplicates normalized article URLs", 
   assert.equal(items.length, 1);
   assert.equal(items[0]?.url, "https://meduza.io/feature/2026/08/29/story");
   assert.equal(items[0]?.title, "Story A");
+  assert.equal(items[0]?.contentKind, "article");
+  assert.deepEqual(items[0]?.context, {});
 });

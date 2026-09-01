@@ -13,6 +13,7 @@ test("parseConfig uses safe defaults", () => {
   assert.equal(config.maxArticles, 50);
   assert.equal(config.editionMaxArticles, 10);
   assert.equal(config.editorialMaxPerTopic, 3);
+  assert.equal(config.editorialMaxPerSource, 10);
   assert.equal(config.includeFullArticles, true);
   assert.equal(config.editionRetentionDays, 30);
   assert.equal(config.buildRetentionDays, 7);
@@ -44,6 +45,7 @@ test("parseConfig parses explicit values", () => {
     MAX_ARTICLES: "80",
     EDITION_MAX_ARTICLES: "12",
     EDITORIAL_MAX_PER_TOPIC: "4",
+    EDITORIAL_MAX_PER_SOURCE: "5",
     EDITION_LANGUAGE: "en",
     INCLUDE_FULL_ARTICLES: "off",
     MEDUZA_RSS_URL: "https://example.com/feed.xml",
@@ -73,6 +75,7 @@ test("parseConfig parses explicit values", () => {
   assert.equal(config.maxArticles, 80);
   assert.equal(config.editionMaxArticles, 12);
   assert.equal(config.editorialMaxPerTopic, 4);
+  assert.equal(config.editorialMaxPerSource, 5);
   assert.equal(config.editionLanguage, "en");
   assert.equal(config.includeFullArticles, false);
   assert.equal(config.httpUserAgent, "fixture-agent/2.0");
@@ -109,6 +112,10 @@ test("parseConfig rejects invalid booleans and cross-field article limits", () =
   assert.throws(
     () => parseConfig({ EDITION_MAX_ARTICLES: "2", EDITORIAL_MAX_PER_TOPIC: "3" }),
     /EDITORIAL_MAX_PER_TOPIC \(3\) must not exceed EDITION_MAX_ARTICLES \(2\)/
+  );
+  assert.throws(
+    () => parseConfig({ EDITION_MAX_ARTICLES: "2", EDITORIAL_MAX_PER_SOURCE: "3" }),
+    /EDITORIAL_MAX_PER_SOURCE \(3\) must not exceed EDITION_MAX_ARTICLES \(2\)/
   );
 });
 

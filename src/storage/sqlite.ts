@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import type { AnalysisIdentity, Article, ArticleAnalysis, EditorialMetadata, EditorialPlan } from "../types.js";
+import type { AnalysisIdentity, Article, ArticleAnalysis, ContentKind, EditorialMetadata, EditorialPlan, SourceContext } from "../types.js";
 import { MIGRATIONS } from "./migrations.js";
 
 export { LATEST_SCHEMA_VERSION } from "./migrations.js";
@@ -16,11 +16,34 @@ export interface ArticleVersion {
   author?: string;
   publishedAt: string;
   language: string;
+  contentKind: ContentKind;
+  sourceContext: SourceContext;
   text: string;
   contentHtml: string;
   contentHash: string;
   fetchedAt: string;
   createdAt: string;
+}
+
+function parseContentKind(value: unknown): ContentKind {
+  return value === "discussion" ? "discussion" : "article";
+}
+
+function parseSourceContext(value: unknown): SourceContext {
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const context: SourceContext = {};
+    for (const [key, entry] of Object.entries(parsed as Record<string, unknown>)) {
+      if (entry === null || typeof entry === "string" || typeof entry === "boolean" || (typeof entry === "number" && Number.isFinite(entry))) {
+        context[key] = entry;
+      }
+    }
+    return context;
+  } catch {
+    return {};
+  }
 }
 
 function mapArticle(row: Record<string, unknown>): Article & { id: number } {
@@ -33,6 +56,8 @@ function mapArticle(row: Record<string, unknown>): Article & { id: number } {
     author: row.author === null || row.author === undefined ? undefined : String(row.author),
     publishedAt: String(row.published_at),
     language: String(row.language),
+    contentKind: parseContentKind(row.content_kind),
+    sourceContext: parseSourceContext(row.source_context_json),
     text: String(row.text),
     contentHtml: String(row.content_html),
     contentHash: String(row.content_hash),
@@ -51,6 +76,8 @@ function mapVersion(row: Record<string, unknown>): ArticleVersion {
     author: row.author === null || row.author === undefined ? undefined : String(row.author),
     publishedAt: String(row.published_at),
     language: String(row.language),
+    contentKind: parseContentKind(row.content_kind),
+    sourceContext: parseSourceContext(row.source_context_json),
     text: String(row.text),
     contentHtml: String(row.content_html),
     contentHash: String(row.content_hash),
@@ -71,7 +98,7 @@ function mapAnalysis(row: Record<string, unknown>): ArticleAnalysis {
     importance: Number(row.importance),
     recommended: Boolean(row.recommended),
     reason: String(row.reason),
-    keyFacts: JSON.parse(String(row.key_facts_json)) as string[],
+    keyPoints: JSON.parse(String(row.key_facts_json)) as string[],
     analyzedAt: String(row.analyzed_at),
     modelName: String(row.model_name),
     promptVersion: String(row.prompt_version),
@@ -157,10 +184,10 @@ export class NewsDatabase {
         this.db.prepare(`
           INSERT INTO articles (
             source_id, external_id, url, title, author, published_at, language,
-            text, content_html, content_hash, fetched_at
+            content_kind, source_context_json, text, content_html, content_hash, fetched_at
           ) VALUES (
             @sourceId, @externalId, @url, @title, @author, @publishedAt, @language,
-            @text, @contentHtml, @contentHash, @fetchedAt
+            @contentKind, @sourceContextJson, @text, @contentHtml, @contentHash, @fetchedAt
           )
         `).run({
           sourceId: article.sourceId,
@@ -170,6 +197,8 @@ export class NewsDatabase {
           author: article.author ?? null,
           publishedAt: article.publishedAt,
           language: article.language,
+          contentKind: article.contentKind,
+          sourceContextJson: JSON.stringify(article.sourceContext),
           text: article.text,
           contentHtml: article.contentHtml,
           contentHash: article.contentHash,
@@ -185,6 +214,8 @@ export class NewsDatabase {
             author = @author,
             published_at = @publishedAt,
             language = @language,
+            content_kind = @contentKind,
+            source_context_json = @sourceContextJson,
             text = @text,
             content_html = @contentHtml,
             content_hash = @contentHash,
@@ -199,6 +230,8 @@ export class NewsDatabase {
           author: article.author ?? null,
           publishedAt: article.publishedAt,
           language: article.language,
+          contentKind: article.contentKind,
+          sourceContextJson: JSON.stringify(article.sourceContext),
           text: article.text,
           contentHtml: article.contentHtml,
           contentHash: article.contentHash,
@@ -214,10 +247,12 @@ export class NewsDatabase {
       this.db.prepare(`
         INSERT OR IGNORE INTO article_versions (
           article_id, normalized_url, source_id, external_id, title, author,
-          published_at, language, text, content_html, content_hash, fetched_at, created_at
+          published_at, language, content_kind, source_context_json,
+          text, content_html, content_hash, fetched_at, created_at
         ) VALUES (
           @articleId, @normalizedUrl, @sourceId, @externalId, @title, @author,
-          @publishedAt, @language, @text, @contentHtml, @contentHash, @fetchedAt, @createdAt
+          @publishedAt, @language, @contentKind, @sourceContextJson,
+          @text, @contentHtml, @contentHash, @fetchedAt, @createdAt
         )
       `).run({
         articleId: stored.id,
@@ -228,6 +263,8 @@ export class NewsDatabase {
         author: stored.author ?? null,
         publishedAt: stored.publishedAt,
         language: stored.language,
+        contentKind: stored.contentKind,
+        sourceContextJson: JSON.stringify(stored.sourceContext),
         text: stored.text,
         contentHtml: stored.contentHtml,
         contentHash: stored.contentHash,
@@ -276,7 +313,7 @@ export class NewsDatabase {
         article_id, summary, topics_json, importance, recommended, reason, key_facts_json, analyzed_at,
         model_name, prompt_version, analysis_version, latency_ms, prompt_tokens, completion_tokens, total_tokens
       ) VALUES (
-        @articleId, @summary, @topicsJson, @importance, @recommended, @reason, @keyFactsJson, @analyzedAt,
+        @articleId, @summary, @topicsJson, @importance, @recommended, @reason, @keyPointsJson, @analyzedAt,
         @modelName, @promptVersion, @analysisVersion, @latencyMs, @promptTokens, @completionTokens, @totalTokens
       )
       ON CONFLICT(article_id) DO UPDATE SET
@@ -301,7 +338,7 @@ export class NewsDatabase {
       importance: analysis.importance,
       recommended: analysis.recommended ? 1 : 0,
       reason: analysis.reason,
-      keyFactsJson: JSON.stringify(analysis.keyFacts),
+      keyPointsJson: JSON.stringify(analysis.keyPoints),
       analyzedAt: analysis.analyzedAt,
       modelName: analysis.modelName,
       promptVersion: analysis.promptVersion,

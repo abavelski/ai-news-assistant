@@ -45,6 +45,8 @@ function item(options: {
       title: options.title,
       publishedAt: options.publishedAt,
       language: "ru",
+      contentKind: "article",
+      sourceContext: {},
       text: `RAW_FULL_ARTICLE_BODY_${options.id}`,
       contentHtml: `<p>RAW_HTML_BODY_${options.id}</p>`,
       contentHash: `hash-${options.id}`,
@@ -60,7 +62,7 @@ function item(options: {
       importance: options.importance,
       recommended: options.recommended,
       reason: `Причина для материала ${options.id}`,
-      keyFacts: [`Факт ${options.id}`],
+      keyPoints: [`Факт ${options.id}`],
       analyzedAt: options.publishedAt,
       latencyMs: 10
     }
@@ -222,4 +224,36 @@ test("strict editorial schema rejects extra fields and over-limit selections", (
     ),
     /schema validation/
   );
+});
+
+
+test("editorial validation and fallback enforce maximum items per source", () => {
+  const alternate = item({
+    id: 10,
+    title: "Другой источник",
+    topic: "общество",
+    summary: "Другой источник описывает отдельный важный сюжет.",
+    importance: 70,
+    recommended: true,
+    publishedAt: "2026-08-29T11:00:00.000Z"
+  });
+  alternate.article.sourceId = "other";
+
+  assert.throws(
+    () => parseEditorialPlan(
+      JSON.stringify({ overview: "Обзор", selectedArticleIds: [1, 2] }),
+      [...items, alternate],
+      { language: "ru", maxArticles: 3, maxPerTopic: 3, maxPerSource: 1 }
+    ),
+    /schema validation/
+  );
+
+  const plan = deterministicEditorialPlan([...items, alternate], {
+    language: "ru",
+    maxArticles: 3,
+    maxPerTopic: 3,
+    maxPerSource: 1
+  });
+  assert.ok(plan.selectedArticleIds.includes(10));
+  assert.equal(plan.selectedArticleIds.filter((id) => id !== 10).length, 1);
 });

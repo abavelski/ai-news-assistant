@@ -2,21 +2,22 @@ import { LlmError } from "../errors.js";
 import { retryDelayMs, sleep as defaultSleep, type SleepFunction } from "../http.js";
 import { logger } from "../logging.js";
 import type { AnalysisIdentity, Article, ArticleAnalysis } from "../types.js";
-import { articleAnalysisPrompt, ARTICLE_ANALYSIS_PROMPT_VERSION } from "./prompts.js";
+import { contentAnalysisPrompt, CONTENT_ANALYSIS_PROMPT_VERSION } from "./prompts.js";
 import { isRetryableLlmError, parseJsonObject, type LlmProvider, type LlmUsage } from "./provider.js";
 
-export const ARTICLE_ANALYSIS_VERSION = "article-analysis-schema-v1";
+export const CONTENT_ANALYSIS_VERSION = "content-analysis-schema-v2";
+export const ARTICLE_ANALYSIS_VERSION = CONTENT_ANALYSIS_VERSION;
 
-interface ArticleAnalysisPayload {
+interface ContentAnalysisPayload {
   summary: string;
   topics: string[];
   importance: number;
   recommended: boolean;
   reason: string;
-  keyFacts: string[];
+  keyPoints: string[];
 }
 
-export interface AnalyzeArticleOptions {
+export interface AnalyzeContentOptions {
   language: string;
   modelName: string;
   maxArticleChars: number;
@@ -25,7 +26,9 @@ export interface AnalyzeArticleOptions {
   sleep?: SleepFunction;
 }
 
-const EXPECTED_FIELDS = new Set(["summary", "topics", "importance", "recommended", "reason", "keyFacts"]);
+export type AnalyzeArticleOptions = AnalyzeContentOptions;
+
+const EXPECTED_FIELDS = new Set(["summary", "topics", "importance", "recommended", "reason", "keyPoints"]);
 
 function stringField(value: unknown, name: string, maxLength: number, issues: string[]): string | undefined {
   if (typeof value !== "string" || !value.trim()) {
@@ -62,9 +65,9 @@ function stringArrayField(
   return result;
 }
 
-export function validateArticleAnalysis(value: unknown): ArticleAnalysisPayload {
+export function validateContentAnalysis(value: unknown): ContentAnalysisPayload {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new LlmError("Article analysis output must be a JSON object.", {
+    throw new LlmError("Content analysis output must be a JSON object.", {
       context: { retryable: true, kind: "invalid-output" }
     });
   }
@@ -78,15 +81,15 @@ export function validateArticleAnalysis(value: unknown): ArticleAnalysisPayload 
   const summary = stringField(record.summary, "summary", 12_000, issues);
   const topics = stringArrayField(record.topics, "topics", 20, 200, issues);
   const reason = stringField(record.reason, "reason", 8_000, issues);
-  const keyFacts = stringArrayField(record.keyFacts, "keyFacts", 30, 1_000, issues);
+  const keyPoints = stringArrayField(record.keyPoints, "keyPoints", 30, 1_000, issues);
 
   if (!Number.isInteger(record.importance) || Number(record.importance) < 0 || Number(record.importance) > 100) {
     issues.push("importance must be an integer from 0 to 100");
   }
   if (typeof record.recommended !== "boolean") issues.push("recommended must be a boolean");
 
-  if (issues.length > 0 || !summary || !topics || !reason || !keyFacts) {
-    throw new LlmError("Article analysis output failed schema validation.", {
+  if (issues.length > 0 || !summary || !topics || !reason || !keyPoints) {
+    throw new LlmError("Content analysis output failed schema validation.", {
       context: { retryable: true, kind: "invalid-output", issues }
     });
   }
@@ -97,21 +100,27 @@ export function validateArticleAnalysis(value: unknown): ArticleAnalysisPayload 
     importance: Number(record.importance),
     recommended: record.recommended as boolean,
     reason,
-    keyFacts
+    keyPoints
   };
 }
 
-export function parseArticleAnalysis(raw: string): ArticleAnalysisPayload {
-  return validateArticleAnalysis(parseJsonObject<Record<string, unknown>>(raw));
+export const validateArticleAnalysis = validateContentAnalysis;
+
+export function parseContentAnalysis(raw: string): ContentAnalysisPayload {
+  return validateContentAnalysis(parseJsonObject<Record<string, unknown>>(raw));
 }
 
-export function articleAnalysisIdentity(modelName: string): AnalysisIdentity {
+export const parseArticleAnalysis = parseContentAnalysis;
+
+export function contentAnalysisIdentity(modelName: string): AnalysisIdentity {
   return {
     modelName,
-    promptVersion: ARTICLE_ANALYSIS_PROMPT_VERSION,
-    analysisVersion: ARTICLE_ANALYSIS_VERSION
+    promptVersion: CONTENT_ANALYSIS_PROMPT_VERSION,
+    analysisVersion: CONTENT_ANALYSIS_VERSION
   };
 }
+
+export const articleAnalysisIdentity = contentAnalysisIdentity;
 
 function addUsage(total: LlmUsage, usage: LlmUsage | undefined): void {
   if (!usage) return;
@@ -120,21 +129,21 @@ function addUsage(total: LlmUsage, usage: LlmUsage | undefined): void {
   if (usage.totalTokens !== undefined) total.totalTokens = (total.totalTokens ?? 0) + usage.totalTokens;
 }
 
-export async function analyzeArticle(
+export async function analyzeContent(
   article: Article & { id: number },
   provider: LlmProvider,
-  options: AnalyzeArticleOptions
+  options: AnalyzeContentOptions
 ): Promise<ArticleAnalysis> {
-  const identity = articleAnalysisIdentity(options.modelName);
-  const log = logger.child({ component: "article-analysis", articleId: article.id, ...identity });
+  const identity = contentAnalysisIdentity(options.modelName);
+  const log = logger.child({ component: "content-analysis", articleId: article.id, contentKind: article.contentKind, ...identity });
   const sleep = options.sleep ?? defaultSleep;
   const totalAttempts = options.retries + 1;
   const usage: LlmUsage = {};
   let latencyMs = 0;
 
   const messages = [
-    { role: "system" as const, content: "You are a careful news analyst. Return only JSON when requested." },
-    { role: "user" as const, content: articleAnalysisPrompt(article, options.language, options.maxArticleChars) }
+    { role: "system" as const, content: "You are a careful content analyst. Return only JSON when requested." },
+    { role: "user" as const, content: contentAnalysisPrompt(article, options.language, options.maxArticleChars) }
   ];
 
   for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
@@ -142,7 +151,7 @@ export async function analyzeArticle(
       const completion = await provider.complete(messages);
       latencyMs += completion.latencyMs;
       addUsage(usage, completion.usage);
-      const parsed = parseArticleAnalysis(completion.content);
+      const parsed = parseContentAnalysis(completion.content);
 
       return {
         articleId: article.id,
@@ -160,12 +169,14 @@ export async function analyzeArticle(
       if (!retryable || attempt === totalAttempts) throw error;
 
       const delayMs = retryDelayMs(options.retryBaseDelayMs, attempt);
-      log.warn("retrying article analysis", { attempt, nextAttempt: attempt + 1, delayMs, error });
+      log.warn("retrying content analysis", { attempt, nextAttempt: attempt + 1, delayMs, error });
       await sleep(delayMs);
     }
   }
 
-  throw new LlmError("Article analysis failed after all attempts.", {
+  throw new LlmError("Content analysis failed after all attempts.", {
     context: { retryable: false, articleId: article.id }
   });
 }
+
+export const analyzeArticle = analyzeContent;

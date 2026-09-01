@@ -24,11 +24,13 @@ export interface FetchAndExtractOptions {
   minArticleChars: number;
   fetchFn?: FetchFunction;
   sleep?: SleepFunction;
+  meduzaMode?: boolean;
 }
 
 export interface ExtractHtmlOptions {
   language?: string;
   minArticleChars?: number;
+  meduzaMode?: boolean;
 }
 
 function cleanMeduzaDocument(document: Document): void {
@@ -45,9 +47,9 @@ function firstAttribute(document: Document, candidates: Array<[string, string]>)
   return undefined;
 }
 
-function extractCanonicalUrl(document: Document, item: DiscoveredItem): string {
+function extractCanonicalUrl(document: Document, item: DiscoveredItem, meduzaMode: boolean): string {
   const canonical = firstAttribute(document, [["link[rel~='canonical' i]", "href"]]);
-  if (item.sourceId === "meduza") {
+  if (meduzaMode) {
     return (canonical && tryNormalizeMeduzaUrl(canonical, item.url)) ?? normalizeMeduzaUrl(item.url);
   }
   if (!canonical) return item.url;
@@ -91,13 +93,14 @@ export function extractArticleFromHtml(
 ): Article {
   const language = options.language ?? "ru";
   const minArticleChars = options.minArticleChars ?? 200;
+  const meduzaMode = options.meduzaMode ?? item.sourceId === "meduza";
 
   try {
     const dom = new JSDOM(html, { url: item.url });
     const document = dom.window.document;
-    if (item.sourceId === "meduza") cleanMeduzaDocument(document);
+    if (meduzaMode) cleanMeduzaDocument(document);
 
-    const canonicalUrl = extractCanonicalUrl(document, item);
+    const canonicalUrl = extractCanonicalUrl(document, item, meduzaMode);
     const publishedAt = extractPublishedAt(document, item.publishedAt);
     const parsed = new Readability(document).parse();
     if (!parsed?.textContent || !parsed.content) {
@@ -123,6 +126,8 @@ export function extractArticleFromHtml(
       author: extractAuthor(document, parsed.byline),
       publishedAt,
       language,
+      contentKind: item.contentKind,
+      sourceContext: item.context,
       text,
       contentHtml: parsed.content,
       contentHash: sha256(text),
@@ -173,6 +178,7 @@ export async function fetchAndExtract(item: DiscoveredItem, options: FetchAndExt
 
   return extractArticleFromHtml(item, html, {
     language: options.language,
-    minArticleChars: options.minArticleChars
+    minArticleChars: options.minArticleChars,
+    meduzaMode: options.meduzaMode
   });
 }

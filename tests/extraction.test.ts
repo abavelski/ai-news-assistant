@@ -12,7 +12,9 @@ const item: DiscoveredItem = {
   externalId: "fixture-story",
   url: "https://meduza.io/feature/2026/08/29/example-story?utm_source=feed",
   title: "RSS fallback title",
-  publishedAt: "2026-08-29T03:00:00.000Z"
+  publishedAt: "2026-08-29T03:00:00.000Z",
+  contentKind: "article",
+  context: {}
 };
 
 test("Meduza extraction prefers canonical and page metadata and removes source-specific related material", async () => {

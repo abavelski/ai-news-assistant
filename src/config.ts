@@ -12,6 +12,7 @@ export interface AppConfig {
   maxArticles: number;
   editionMaxArticles: number;
   editorialMaxPerTopic: number;
+  editorialMaxPerSource: number;
   editionLanguage: string;
   includeFullArticles: boolean;
   editionRetentionDays: number;
@@ -129,6 +130,13 @@ export function parseConfig(env: Environment = process.env): AppConfig {
     1,
     1000
   );
+  const editorialMaxPerSource = integerEnv(
+    env,
+    "EDITORIAL_MAX_PER_SOURCE",
+    editionMaxArticles,
+    1,
+    1000
+  );
 
   if (editionMaxArticles > maxArticles) {
     throw new ConfigurationError(
@@ -138,6 +146,11 @@ export function parseConfig(env: Environment = process.env): AppConfig {
   if (editorialMaxPerTopic > editionMaxArticles) {
     throw new ConfigurationError(
       `EDITORIAL_MAX_PER_TOPIC (${editorialMaxPerTopic}) must not exceed EDITION_MAX_ARTICLES (${editionMaxArticles}).`
+    );
+  }
+  if (editorialMaxPerSource > editionMaxArticles) {
+    throw new ConfigurationError(
+      `EDITORIAL_MAX_PER_SOURCE (${editorialMaxPerSource}) must not exceed EDITION_MAX_ARTICLES (${editionMaxArticles}).`
     );
   }
 
@@ -150,6 +163,7 @@ export function parseConfig(env: Environment = process.env): AppConfig {
     maxArticles,
     editionMaxArticles,
     editorialMaxPerTopic,
+    editorialMaxPerSource,
     editionLanguage: nonEmptyEnv(env, "EDITION_LANGUAGE", "ru"),
     includeFullArticles: booleanEnv(env, "INCLUDE_FULL_ARTICLES", true),
     editionRetentionDays: integerEnv(env, "EDITION_RETENTION_DAYS", 30, 1, 3650),

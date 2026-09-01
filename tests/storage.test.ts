@@ -24,7 +24,9 @@ function article(overrides: Partial<Article> = {}): Article {
     contentHtml: overrides.contentHtml ?? `<p>${text}</p>`,
     contentHash: overrides.contentHash ?? sha256(text),
     fetchedAt: overrides.fetchedAt ?? "2026-08-29T08:05:00.000Z",
-    ...overrides
+    ...overrides,
+    contentKind: overrides.contentKind ?? "article",
+    sourceContext: overrides.sourceContext ?? {}
   };
 }
 
@@ -42,7 +44,7 @@ function analysis(articleId: number, overrides: Partial<ArticleAnalysis> = {}): 
     importance: 50,
     recommended: true,
     reason: "reason",
-    keyFacts: ["fact"],
+    keyPoints: ["fact"],
     analyzedAt: "2026-08-29T08:06:00.000Z",
     ...identity,
     latencyMs: 123,
@@ -67,7 +69,7 @@ test("migrations initialize an empty database at the latest schema version", asy
     const db = new NewsDatabase(dataDir);
     try {
       assert.equal(db.getSchemaVersion(), LATEST_SCHEMA_VERSION);
-      assert.equal(LATEST_SCHEMA_VERSION, 4);
+      assert.equal(LATEST_SCHEMA_VERSION, 5);
     } finally {
       db.close();
     }
@@ -278,12 +280,15 @@ test("migration upgrades the legacy schema and marks old analysis metadata as le
     try {
       assert.equal(upgraded.getSchemaVersion(), LATEST_SCHEMA_VERSION);
       assert.equal(upgraded.getArticleVersions(row.id).length, 1);
+      assert.equal(upgraded.getArticleByUrl(legacyArticle.url)?.contentKind, "article");
+      assert.deepEqual(upgraded.getArticleByUrl(legacyArticle.url)?.sourceContext, {});
       const migrated = upgraded.getAnalysis(row.id);
       assert.equal(migrated?.summary, "legacy summary");
       assert.equal(migrated?.modelName, "legacy");
       assert.equal(migrated?.promptVersion, "legacy");
       assert.equal(migrated?.analysisVersion, "legacy");
       assert.equal(migrated?.latencyMs, 0);
+      assert.deepEqual(migrated?.keyPoints, ["legacy fact"]);
       assert.equal(upgraded.getAnalysis(row.id, identity), undefined);
       assert.deepEqual(upgraded.getEditionArticleIds("2026-08-29"), [row.id]);
       assert.deepEqual(upgraded.getEditionEditorialMetadata("2026-08-29"), {

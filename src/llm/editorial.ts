@@ -9,9 +9,14 @@ export interface EditorialSelectionOptions {
   modelName: string;
   maxArticles: number;
   maxPerTopic: number;
+  maxPerSource?: number;
 }
 
 const EXPECTED_FIELDS = new Set(["overview", "selectedArticleIds"]);
+
+function sourceLimit(options: Pick<EditorialSelectionOptions, "maxArticles" | "maxPerSource">): number {
+  return options.maxPerSource ?? options.maxArticles;
+}
 
 function primaryTopic(item: EditionArticle): string | undefined {
   const topic = item.analysis.topics.find((value) => value.trim().length > 0)?.trim().toLocaleLowerCase("und");
@@ -55,7 +60,7 @@ function validationError(issues: string[]): LlmError {
 export function validateEditorialPlan(
   value: unknown,
   items: EditionArticle[],
-  options: Pick<EditorialSelectionOptions, "language" | "maxArticles" | "maxPerTopic">
+  options: Pick<EditorialSelectionOptions, "language" | "maxArticles" | "maxPerTopic" | "maxPerSource">
 ): EditorialPlan {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw validationError(["editorial plan must be a JSON object"]);
@@ -92,6 +97,8 @@ export function validateEditorialPlan(
   const selected: EditionArticle[] = [];
   const ids: number[] = [];
   const topicCounts = new Map<string, number>();
+  const sourceCounts = new Map<string, number>();
+  const maxPerSource = sourceLimit(options);
 
   for (const [index, rawId] of record.selectedArticleIds.entries()) {
     if (!Number.isSafeInteger(rawId)) {
@@ -118,6 +125,12 @@ export function validateEditorialPlan(
       }
     }
 
+    const sourceCount = (sourceCounts.get(item.article.sourceId) ?? 0) + 1;
+    sourceCounts.set(item.article.sourceId, sourceCount);
+    if (sourceCount > maxPerSource) {
+      issues.push(`source ${JSON.stringify(item.article.sourceId)} exceeds limit ${maxPerSource}`);
+    }
+
     for (const prior of selected) {
       if (areNearDuplicateStories(prior, item)) {
         issues.push(`selected ids ${prior.article.id} and ${id} are near-duplicate coverage`);
@@ -137,7 +150,7 @@ export function validateEditorialPlan(
 export function parseEditorialPlan(
   raw: string,
   items: EditionArticle[],
-  options: Pick<EditorialSelectionOptions, "language" | "maxArticles" | "maxPerTopic">
+  options: Pick<EditorialSelectionOptions, "language" | "maxArticles" | "maxPerTopic" | "maxPerSource">
 ): EditorialPlan {
   return validateEditorialPlan(parseJsonObject<Record<string, unknown>>(raw), items, options);
 }
@@ -171,7 +184,7 @@ function fallbackOverview(selected: EditionArticle[], language: string): string 
 
 export function deterministicEditorialPlan(
   items: EditionArticle[],
-  options: Pick<EditorialSelectionOptions, "language" | "maxArticles" | "maxPerTopic">
+  options: Pick<EditorialSelectionOptions, "language" | "maxArticles" | "maxPerTopic" | "maxPerSource">
 ): EditorialPlan {
   const timestamps = items
     .map((item) => new Date(item.article.publishedAt).getTime())
@@ -188,14 +201,18 @@ export function deterministicEditorialPlan(
 
   const selected: EditionArticle[] = [];
   const topicCounts = new Map<string, number>();
+  const sourceCounts = new Map<string, number>();
+  const maxPerSource = sourceLimit(options);
   for (const item of ranked) {
     if (selected.length >= options.maxArticles) break;
     const topic = primaryTopic(item);
     if (topic && (topicCounts.get(topic) ?? 0) >= options.maxPerTopic) continue;
+    if ((sourceCounts.get(item.article.sourceId) ?? 0) >= maxPerSource) continue;
     if (selected.some((prior) => areNearDuplicateStories(prior, item))) continue;
 
     selected.push(item);
     if (topic) topicCounts.set(topic, (topicCounts.get(topic) ?? 0) + 1);
+    sourceCounts.set(item.article.sourceId, (sourceCounts.get(item.article.sourceId) ?? 0) + 1);
   }
 
   return {
@@ -218,7 +235,16 @@ export async function selectEditorialPlan(
   try {
     const completion = await provider.complete([
       { role: "system", content: "You are a rigorous personal newspaper editor. Return only JSON when requested." },
-      { role: "user", content: editorialPrompt(items, options.language, options.maxArticles, options.maxPerTopic) }
+      {
+        role: "user",
+        content: editorialPrompt(
+          items,
+          options.language,
+          options.maxArticles,
+          options.maxPerTopic,
+          sourceLimit(options)
+        )
+      }
     ]);
     const plan = parseEditorialPlan(completion.content, items, options);
     return {
