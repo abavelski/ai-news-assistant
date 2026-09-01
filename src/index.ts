@@ -9,6 +9,7 @@ import { acquirePipelineRunLock } from "./operations/run-lock.js";
 import { recordRunFailed, recordRunStarted, recordRunSucceeded } from "./operations/status.js";
 import { runPipeline } from "./pipeline.js";
 import { createDefaultSourceRegistry } from "./sources/registry.js";
+import { defaultRedditSettings, normalizeSubredditName, redditSourceId } from "./sources/reddit.js";
 import { SourceConfigService } from "./sources/service.js";
 import { SourceConfigRepository } from "./storage/source-config.js";
 
@@ -20,10 +21,7 @@ function parseSettingsJson(raw: string): unknown {
   }
 }
 
-async function runSourcesCommand(
-  config: ReturnType<typeof loadConfig>,
-  args: string[]
-): Promise<void> {
+async function runSourcesCommand(config: ReturnType<typeof loadConfig>, args: string[]): Promise<void> {
   const registry = createDefaultSourceRegistry();
   const repository = new SourceConfigRepository(config.dataDir);
   const service = new SourceConfigService(repository, registry);
@@ -42,19 +40,41 @@ async function runSourcesCommand(
     }
 
     if (subcommand === "add") {
-      const [type, id, settingsJson, displayName] = args.slice(1);
-      if (!type || !id || !settingsJson) {
+      const [type, idOrSubreddit, settingsJson, displayName] = args.slice(1);
+      if (type === "reddit" && idOrSubreddit && !settingsJson) {
+        const subreddit = normalizeSubredditName(idOrSubreddit);
+        const created = service.create({
+          type: "reddit",
+          id: redditSourceId(subreddit),
+          settings: defaultRedditSettings(subreddit),
+          displayName: `r/${subreddit}`
+        });
+        process.stdout.write(JSON.stringify(created, null, 2) + "\n");
+        return;
+      }
+      if (!type || !idOrSubreddit || !settingsJson) {
         throw new ConfigurationError(
-          "Usage: sources add <type> <id> '<settings-json>' [display-name]"
+          "Usage: sources add reddit <subreddit> OR sources add <type> <id> '<settings-json>' [display-name]"
         );
       }
       const created = service.create({
         type,
-        id,
+        id: idOrSubreddit,
         settings: parseSettingsJson(settingsJson),
         displayName
       });
       process.stdout.write(JSON.stringify(created, null, 2) + "\n");
+      return;
+    }
+
+    if (subcommand === "update") {
+      const [id, settingsJson, displayName] = args.slice(1);
+      if (!id || !settingsJson) throw new ConfigurationError("Usage: sources update <id> '<settings-json>' [display-name]");
+      const updated = service.update(id, {
+        settings: parseSettingsJson(settingsJson),
+        ...(displayName ? { displayName } : {})
+      });
+      process.stdout.write(JSON.stringify(updated, null, 2) + "\n");
       return;
     }
 
@@ -67,7 +87,7 @@ async function runSourcesCommand(
     }
 
     throw new ConfigurationError(
-      `Unknown sources subcommand ${JSON.stringify(subcommand)}. Use list, types, add, enable, or disable.`
+      `Unknown sources subcommand ${JSON.stringify(subcommand)}. Use list, types, add, update, enable, or disable.`
     );
   } finally {
     repository.close();
@@ -182,7 +202,9 @@ async function main(): Promise<void> {
     "Source commands:\n" +
     "  sources list\n" +
     "  sources types\n" +
+    "  sources add reddit <subreddit>\n" +
     "  sources add <type> <id> '<settings-json>' [display-name]\n" +
+    "  sources update <id> '<settings-json>' [display-name]\n" +
     "  sources enable <id>\n" +
     "  sources disable <id>\n"
   );

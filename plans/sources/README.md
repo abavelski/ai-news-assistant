@@ -74,13 +74,13 @@ Make Meduza run through the generalized interfaces, introduce persistent source 
 
 Task 13 is complete and archived at [`../completed/13-multi-source-foundation.md`](../completed/13-multi-source-foundation.md). Reddit now builds on its persisted source configuration/service/registry contracts.
 
-### Task 14 — Reddit discussions
+### Task 14 — Reddit discussions (completed)
 
-Add the Reddit OAuth client and configured subreddit instances, discover new posts, retrieve bounded discussion snapshots, summarize discussion themes/viewpoints rather than treating comments as verified facts, and mix selected discussions into the same morning EPUB.
+Task 14 is complete and archived at [`../completed/14-reddit-discussions.md`](../completed/14-reddit-discussions.md). Reddit now uses authenticated OAuth discovery, bounded anonymous discussion snapshots, minimized durable storage, discussion-aware analysis/rendering, and deterministic edition-wide discussion caps.
 
 ## Admin GUI handoff
 
-After Task 14, the expected next workstream is an admin GUI. The source work should leave these stable backend seams for it:
+Tasks 13–14 are complete. The next workstream is the admin GUI. The source work should leave these stable backend seams for it:
 
 - list source instances and their typed settings,
 - create/update/enable/disable source instances through a service layer,

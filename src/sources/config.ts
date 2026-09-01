@@ -41,7 +41,7 @@ export interface SourceRunStatus {
 
 export interface SourceSettingDescriptor {
   name: string;
-  type: "string" | "integer" | "boolean";
+  type: "string" | "integer" | "boolean" | "string-list";
   required: boolean;
   label: string;
   description?: string;
@@ -98,9 +98,7 @@ function assertNoSecretLikeSettings(value: unknown, path = "settings"): void {
 }
 
 export function validateNonSecretSettings(value: unknown): Record<string, unknown> {
-  if (!isPlainObject(value)) {
-    throw new ConfigurationError("Source settings must be a JSON object.");
-  }
+  if (!isPlainObject(value)) throw new ConfigurationError("Source settings must be a JSON object.");
   assertNoSecretLikeSettings(value);
   let serialized: string;
   try {
@@ -128,8 +126,6 @@ export function validateHttpUrl(value: unknown, fieldName: string): string {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new ConfigurationError(`${fieldName} must use http:// or https://.`);
   }
-  if (parsed.username || parsed.password) {
-    throw new ConfigurationError(`${fieldName} must not contain URL credentials.`);
-  }
+  if (parsed.username || parsed.password) throw new ConfigurationError(`${fieldName} must not contain URL credentials.`);
   return normalized.replace(/\/+$/, "");
 }

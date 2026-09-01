@@ -220,25 +220,36 @@ test("missing or empty Pandoc output is rejected before latest EPUB replacement"
   }
 });
 
-
-test("discussion content uses neutral key-point and source-link labels", async () => {
+test("discussion content uses discussion-specific headings and never embeds the raw snapshot", async () => {
   const { dataDir, config } = await tempConfig(true);
   try {
     const discussion = item(7, "Community");
     discussion.article.contentKind = "discussion";
-    discussion.article.sourceId = "fixture:community";
-    discussion.article.url = "https://example.test/discussion/7";
-    discussion.article.sourceContext = { community: "fixture" };
+    discussion.article.sourceId = "reddit:selfhosted";
+    discussion.article.url = "https://www.reddit.com/r/selfhosted/comments/abc123/example/";
+    discussion.article.sourceContext = {
+      subreddit: "selfhosted",
+      score: 42,
+      commentCount: 17,
+      outboundUrl: "https://example.test/project"
+    };
+    discussion.article.text = "RAW COMMENT SNAPSHOT SHOULD NOT BE RENDERED";
     const markdown = buildEditionMarkdown({
       config,
       editionDate: "2026-08-29",
       plan: { overview: "Overview", selectedArticleIds: [7] },
       selected: [discussion]
     });
-    assert.match(markdown, /### Key points/);
-    assert.match(markdown, /### Discussion snapshot/);
-    assert.match(markdown, /\[Original discussion\]/);
+    assert.match(markdown, /r\/selfhosted/);
+    assert.match(markdown, /Comments: 17/);
+    assert.match(markdown, /Score: 42/);
+    assert.match(markdown, /### Discussion summary/);
+    assert.match(markdown, /### Discussion takeaways/);
+    assert.match(markdown, /\[Original Reddit discussion\]/);
+    assert.match(markdown, /\[Linked page\]/);
+    assert.doesNotMatch(markdown, /RAW COMMENT SNAPSHOT/);
     assert.doesNotMatch(markdown, /### Key facts/);
+    assert.doesNotMatch(markdown, /### Full article/);
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }

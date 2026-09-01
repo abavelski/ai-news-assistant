@@ -14,11 +14,7 @@ export interface DoctorCheck {
   detail: string;
 }
 
-export type CommandExecutor = (
-  executable: string,
-  args: string[]
-) => Promise<{ stdout: string; stderr: string }>;
-
+export type CommandExecutor = (executable: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
 const execFileAsync = promisify(execFile);
 
 async function defaultCommandExecutor(executable: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
@@ -42,28 +38,16 @@ export async function checkWritableDirectory(
     return { name, ok: true, detail: `${directory} is writable.` };
   } catch (error) {
     await fs.unlink(probePath).catch(() => undefined);
-    return {
-      name,
-      ok: false,
-      detail: `Cannot write to ${directory}: ${errorMessage(error)}`
-    };
+    return { name, ok: false, detail: `Cannot write to ${directory}: ${errorMessage(error)}` };
   }
 }
 
 export function checkLlmConfiguration(config: AppConfig): DoctorCheck {
   try {
     assertPipelineConfig(config);
-    return {
-      name: "llm-configuration",
-      ok: true,
-      detail: `LLM configured for model ${config.llmModel} at ${config.llmBaseUrl}.`
-    };
+    return { name: "llm-configuration", ok: true, detail: `LLM configured for model ${config.llmModel} at ${config.llmBaseUrl}.` };
   } catch (error) {
-    return {
-      name: "llm-configuration",
-      ok: false,
-      detail: errorMessage(error)
-    };
+    return { name: "llm-configuration", ok: false, detail: errorMessage(error) };
   }
 }
 
@@ -85,6 +69,8 @@ export function checkSourceConfiguration(
       if (missing.length > 0) {
         throw new Error(`Source ${source.id} is missing protected environment settings: ${missing.join(", ")}.`);
       }
+      const issues = registry.runtimeConfigIssues(source, config);
+      if (issues.length > 0) throw new Error(`Source ${source.id} runtime configuration is invalid: ${issues.join(" ")}`);
     }
     return {
       name: "sources",
@@ -98,17 +84,11 @@ export function checkSourceConfiguration(
   }
 }
 
-export async function checkPandocAvailability(
-  execute: CommandExecutor = defaultCommandExecutor
-): Promise<DoctorCheck> {
+export async function checkPandocAvailability(execute: CommandExecutor = defaultCommandExecutor): Promise<DoctorCheck> {
   try {
     const { stdout } = await execute("pandoc", ["--version"]);
     const version = stdout.split(/\r?\n/, 1)[0]?.trim();
-    return {
-      name: "pandoc",
-      ok: true,
-      detail: version || "Pandoc is available."
-    };
+    return { name: "pandoc", ok: true, detail: version || "Pandoc is available." };
   } catch (error) {
     const code = error && typeof error === "object" && "code" in error ? String(error.code) : undefined;
     return {

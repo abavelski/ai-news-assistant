@@ -1,16 +1,12 @@
 # Implementation plans
 
-The server MVP and home-lab deployment are complete. Completed implementation tasks are archived under [`completed/`](completed/), with a concise MVP summary in [`MVP-SUMMARY.md`](MVP-SUMMARY.md).
+The server MVP, home-lab deployment, multi-source foundation, and Reddit discussion source are complete. Completed implementation tasks are archived under [`completed/`](completed/), with a concise MVP summary in [`MVP-SUMMARY.md`](MVP-SUMMARY.md).
 
-## Active work — multiple sources and Reddit
+## Next work — admin GUI
 
-The next workstream generalizes the single-source Meduza pipeline and then adds Reddit discussion digests.
+The next planned workstream is an admin GUI built on the source configuration repository/service and source-type descriptors introduced by Tasks 13–14. It should list source instances and status, add/edit/enable/disable sources, show whether protected provider credentials are configured without exposing them, and surface the Reddit LLM trust-boundary state.
 
-1. [`14-reddit-discussions.md`](sources/14-reddit-discussions.md) — OAuth Reddit ingestion, configurable subreddit subscriptions, bounded thread/comment materialization, discussion-aware LLM analysis, source-aware rendering, rate limiting, and privacy/retention safeguards.
-
-See [`sources/README.md`](sources/README.md) for the architecture and sequencing rationale.
-
-The admin GUI is intentionally not part of these tasks. The source configuration repository/service created in Task 13 should be the backend domain boundary that a later GUI uses rather than introducing a second configuration mechanism.
+Do not introduce a second source configuration store for the GUI; reuse the existing service/domain layer.
 
 ## Completed tasks
 
@@ -24,5 +20,6 @@ The admin GUI is intentionally not part of these tasks. The source configuration
 8. [`10-docker-runtime.md`](completed/10-docker-runtime.md)
 9. [`11-home-lab-operations.md`](completed/11-home-lab-operations.md)
 10. [`13-multi-source-foundation.md`](completed/13-multi-source-foundation.md)
+11. [`14-reddit-discussions.md`](completed/14-reddit-discussions.md)
 
 There is no container-registry publishing task. Production images continue to be built on a stronger local machine and transferred directly to the home server. Wake-on-LAN for the separate gaming-rig LLM remains a possible future task.

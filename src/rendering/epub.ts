@@ -76,9 +76,7 @@ export function estimateReadingMinutes(text: string, language = "und"): number {
   if (!cleaned) return 1;
   const segmenter = new Intl.Segmenter(language || "und", { granularity: "word" });
   let words = 0;
-  for (const segment of segmenter.segment(cleaned)) {
-    if (segment.isWordLike) words += 1;
-  }
+  for (const segment of segmenter.segment(cleaned)) if (segment.isWordLike) words += 1;
   return Math.max(1, Math.ceil(words / WORDS_PER_MINUTE));
 }
 
@@ -86,7 +84,67 @@ function primaryTopic(item: EditionArticle): string | undefined {
   return item.analysis.topics.find((topic) => topic.trim().length > 0)?.trim();
 }
 
+function contextString(item: EditionArticle, key: string): string | undefined {
+  const value = item.article.sourceContext[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function contextNumber(item: EditionArticle, key: string): number | undefined {
+  const value = item.article.sourceContext[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function discussionMarkdown(item: EditionArticle): string[] {
+  const { article, analysis } = item;
+  const subreddit = contextString(item, "subreddit");
+  const author = contextString(item, "postAuthor");
+  const score = contextNumber(item, "score");
+  const comments = contextNumber(item, "commentCount");
+  const sampled = contextNumber(item, "sampledCommentCount");
+  const source = subreddit ? `r/${subreddit}` : article.sourceId;
+  const metadata = [
+    `Source: ${source}`,
+    author ? `Posted by u/${author}` : undefined,
+    `Published: ${article.publishedAt}`,
+    score !== undefined ? `Score: ${score}` : undefined,
+    comments !== undefined ? `Comments: ${comments}` : undefined,
+    sampled !== undefined ? `Sampled for summary: ${sampled}` : undefined
+  ].filter((value): value is string => Boolean(value));
+
+  const lines = [
+    `## ${escapeInlineMarkdown(article.title)}`,
+    "",
+    `*${metadata.map(escapeInlineMarkdown).join(" · ")}*`,
+    "",
+    "### Why this matters",
+    "",
+    sanitizeBlock(analysis.reason),
+    "",
+    "### Discussion summary",
+    "",
+    sanitizeBlock(analysis.summary),
+    ""
+  ];
+
+  if (analysis.keyPoints.length > 0) {
+    lines.push(
+      "### Discussion takeaways",
+      "",
+      ...analysis.keyPoints.map((point) => `- ${sanitizeBlock(point).replace(/\n+/g, " ")}`),
+      ""
+    );
+  }
+
+  const redditUrl = safeUrl(contextString(item, "permalink") ?? article.url);
+  lines.push(redditUrl ? `[Original Reddit discussion](<${redditUrl}>)` : `Original: ${escapeInlineMarkdown(article.url)}`, "");
+  const outbound = safeUrl(contextString(item, "outboundUrl") ?? "");
+  if (outbound && outbound !== redditUrl) lines.push(`[Linked page](<${outbound}>)`, "");
+  return lines;
+}
+
 function articleMarkdown(item: EditionArticle, includeFullArticles: boolean, language: string): string[] {
+  if (item.article.contentKind === "discussion") return discussionMarkdown(item);
+
   const { article, analysis } = item;
   const lines = [
     `## ${escapeInlineMarkdown(article.title)}`,
@@ -104,21 +162,11 @@ function articleMarkdown(item: EditionArticle, includeFullArticles: boolean, lan
   ];
 
   if (analysis.keyPoints.length > 0) {
-    lines.push(
-      article.contentKind === "discussion" ? "### Key points" : "### Key facts",
-      "",
-      ...analysis.keyPoints.map((fact) => `- ${sanitizeBlock(fact).replace(/\n+/g, " ")}`),
-      ""
-    );
+    lines.push("### Key facts", "", ...analysis.keyPoints.map((fact) => `- ${sanitizeBlock(fact).replace(/\n+/g, " ")}`), "");
   }
-
-  if (includeFullArticles) {
-    lines.push(article.contentKind === "discussion" ? "### Discussion snapshot" : "### Full article", "", sanitizeBlock(article.text), "");
-  }
-
+  if (includeFullArticles) lines.push("### Full article", "", sanitizeBlock(article.text), "");
   const originalUrl = safeUrl(article.url);
-  const originalLabel = article.contentKind === "discussion" ? "Original discussion" : "Original article";
-  lines.push(originalUrl ? `[${originalLabel}](<${originalUrl}>)` : `Original: ${escapeInlineMarkdown(article.url)}`, "");
+  lines.push(originalUrl ? `[Original article](<${originalUrl}>)` : `Original: ${escapeInlineMarkdown(article.url)}`, "");
   return lines;
 }
 
@@ -182,10 +230,7 @@ async function ensureNonEmptyFile(filePath: string, editionDate: string): Promis
   try {
     stat = await fs.stat(filePath);
   } catch (cause) {
-    throw new RenderingError("Pandoc did not produce an EPUB output file.", {
-      cause,
-      context: { editionDate, outputPath: filePath }
-    });
+    throw new RenderingError("Pandoc did not produce an EPUB output file.", { cause, context: { editionDate, outputPath: filePath } });
   }
   if (!stat.isFile() || stat.size <= 0) {
     throw new RenderingError("Pandoc produced an empty EPUB output file.", {
@@ -226,11 +271,9 @@ export class PandocEpubRenderer implements EditionRenderer {
     try {
       await fs.mkdir(config.outputDir, { recursive: true });
       await fs.mkdir(buildDir, { recursive: true });
-
       const cssPath = path.join(this.assetsDir, "epub.css");
       const metadataPath = path.join(this.assetsDir, "epub-metadata.yaml");
       await Promise.all([fs.access(cssPath), fs.access(metadataPath)]);
-
       const markdownPath = path.join(buildDir, "edition.md");
       await fs.writeFile(markdownPath, buildEditionMarkdown(request), "utf8");
 
@@ -250,10 +293,7 @@ export class PandocEpubRenderer implements EditionRenderer {
         `--metadata=identifier:${identifier}`,
         `--output=${stagedEpubPath}`
       ], {
-        env: {
-          ...process.env,
-          ...(Number.isFinite(sourceDateEpoch) ? { SOURCE_DATE_EPOCH: String(Math.floor(sourceDateEpoch)) } : {})
-        }
+        env: { ...process.env, ...(Number.isFinite(sourceDateEpoch) ? { SOURCE_DATE_EPOCH: String(Math.floor(sourceDateEpoch)) } : {}) }
       });
 
       const epubBytes = await ensureNonEmptyFile(stagedEpubPath, editionDate);
@@ -279,7 +319,6 @@ export class PandocEpubRenderer implements EditionRenderer {
       await writeAtomic(datedPath, epubBytes, `${token}-dated`);
       await writeAtomic(latestPath, epubBytes, `${token}-latest`);
       await writeAtomic(manifestPath, manifest, `${token}-manifest`);
-
       return { epubPath: latestPath, manifestPath };
     } catch (cause) {
       if (cause instanceof RenderingError) throw cause;

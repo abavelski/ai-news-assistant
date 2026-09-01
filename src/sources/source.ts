@@ -13,6 +13,7 @@ export interface SourceAdapter {
   readonly type: string;
   discover(since: Date): Promise<DiscoveredItem[]>;
   materialize(item: DiscoveredItem): Promise<Article>;
+  prepareForPersistence?(content: Article): Article;
 }
 
 export type NewsSource = SourceAdapter;

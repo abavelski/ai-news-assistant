@@ -73,7 +73,6 @@ export async function runPipeline(
   const log = logger.child({ component: "pipeline", sourceCount: adapters.length });
   const db = new NewsDatabase(config.dataDir);
   const sourceRepository = new SourceConfigRepository(config.dataDir);
-  const analysisIdentity = contentAnalysisIdentity(config.llmModel);
   const processed: EditionArticle[] = [];
 
   try {
@@ -119,11 +118,16 @@ export async function runPipeline(
 
         try {
           const materialized = validateMaterializedContent(await source.materialize(item), item, source);
-          const { article } = db.upsertArticle(materialized);
+          const persistentCandidate = source.prepareForPersistence
+            ? source.prepareForPersistence(materialized)
+            : materialized;
+          const persistent = validateMaterializedContent(persistentCandidate, item, source);
+          const { article } = db.upsertArticle(persistent);
+          const analysisIdentity = contentAnalysisIdentity(config.llmModel, materialized.contentKind);
           let analysis = db.getAnalysis(article.id, analysisIdentity);
 
           if (!analysis) {
-            analysis = await analyzeContent(article, llm, {
+            analysis = await analyzeContent({ ...materialized, id: article.id }, llm, {
               language: config.editionLanguage,
               modelName: config.llmModel,
               maxArticleChars: config.llmArticleMaxChars,
@@ -160,11 +164,7 @@ export async function runPipeline(
       }
 
       processed.push(...sourceProcessed);
-      const checkpoint = db.recordSourceRunCompletion(
-        source.id,
-        sourceStartedAt.toISOString(),
-        failedPublishedAt
-      );
+      const checkpoint = db.recordSourceRunCompletion(source.id, sourceStartedAt.toISOString(), failedPublishedAt);
       sourceRepository.recordAttempt({
         sourceId: source.id,
         sourceType: source.type,
@@ -195,7 +195,8 @@ export async function runPipeline(
       modelName: config.llmModel,
       maxArticles: config.editionMaxArticles,
       maxPerTopic: config.editorialMaxPerTopic,
-      maxPerSource: config.editorialMaxPerSource
+      maxPerSource: config.editorialMaxPerSource,
+      maxDiscussions: config.editorialMaxDiscussions
     });
     const plan = editorial.plan;
     log.info("editorial selection completed", {

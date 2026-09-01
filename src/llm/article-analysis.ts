@@ -1,8 +1,8 @@
 import { LlmError } from "../errors.js";
 import { retryDelayMs, sleep as defaultSleep, type SleepFunction } from "../http.js";
 import { logger } from "../logging.js";
-import type { AnalysisIdentity, Article, ArticleAnalysis } from "../types.js";
-import { contentAnalysisPrompt, CONTENT_ANALYSIS_PROMPT_VERSION } from "./prompts.js";
+import type { AnalysisIdentity, Article, ArticleAnalysis, ContentKind } from "../types.js";
+import { contentAnalysisPrompt, promptVersionForContentKind } from "./prompts.js";
 import { isRetryableLlmError, parseJsonObject, type LlmProvider, type LlmUsage } from "./provider.js";
 
 export const CONTENT_ANALYSIS_VERSION = "content-analysis-schema-v2";
@@ -112,15 +112,17 @@ export function parseContentAnalysis(raw: string): ContentAnalysisPayload {
 
 export const parseArticleAnalysis = parseContentAnalysis;
 
-export function contentAnalysisIdentity(modelName: string): AnalysisIdentity {
+export function contentAnalysisIdentity(modelName: string, contentKind: ContentKind = "article"): AnalysisIdentity {
   return {
     modelName,
-    promptVersion: CONTENT_ANALYSIS_PROMPT_VERSION,
+    promptVersion: promptVersionForContentKind(contentKind),
     analysisVersion: CONTENT_ANALYSIS_VERSION
   };
 }
 
-export const articleAnalysisIdentity = contentAnalysisIdentity;
+export function articleAnalysisIdentity(modelName: string): AnalysisIdentity {
+  return contentAnalysisIdentity(modelName, "article");
+}
 
 function addUsage(total: LlmUsage, usage: LlmUsage | undefined): void {
   if (!usage) return;
@@ -134,7 +136,7 @@ export async function analyzeContent(
   provider: LlmProvider,
   options: AnalyzeContentOptions
 ): Promise<ArticleAnalysis> {
-  const identity = contentAnalysisIdentity(options.modelName);
+  const identity = contentAnalysisIdentity(options.modelName, article.contentKind);
   const log = logger.child({ component: "content-analysis", articleId: article.id, contentKind: article.contentKind, ...identity });
   const sleep = options.sleep ?? defaultSleep;
   const totalAttempts = options.retries + 1;

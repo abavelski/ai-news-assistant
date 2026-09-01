@@ -2,20 +2,20 @@
 
 A personal, self-hosted morning news pipeline that discovers stories, extracts readable content, uses an LLM to summarize and rank it, builds a daily EPUB, and exposes the latest edition for an e-reader.
 
-The first MVP intentionally supports one source: **Meduza RSS**. Every downstream component is separated so generic RSS, Telegram, Reddit, authenticated web sources, local/cloud LLM routing, and Kindle Scribe sync can be added incrementally.
+The service supports **Meduza RSS** articles and configurable **Reddit subreddit discussions** in one morning edition. Sources use a shared persisted configuration/status layer so additional adapters and the planned admin GUI can build on the same domain model.
 
 ## Pipeline
 
 ```text
-Meduza RSS
-   -> discover
-   -> fetch + Readability extraction
-   -> SQLite persistence / content-hash dedupe
-   -> per-article LLM analysis
-   -> editorial LLM selection
-   -> Pandoc EPUB3
-   -> /daily/latest.json + /daily/latest.epub
+Meduza RSS -----------------> article extraction ----+
+                                                     |
+Reddit OAuth /r/.../new -> bounded thread snapshot --+--> content analysis
+                                                          -> cross-source editorial selection
+                                                          -> Pandoc EPUB3
+                                                          -> /daily/latest.json + /daily/latest.epub
 ```
+
+Reddit comment snapshots are analyzed in memory and discarded; durable storage keeps only post identity/safe metadata, a content hash, and the derived analysis.
 
 ## Supported runtime
 
@@ -135,33 +135,52 @@ npm run dev -- doctor
 
 ## Source configuration
 
-Source instances are now stored as validated, non-secret rows in `news.sqlite`. On an existing or fresh installation with no source rows, the application bootstraps one enabled `meduza` source from `MEDUZA_RSS_URL`. After that first bootstrap, the persisted Meduza `rssUrl` is authoritative; changing `MEDUZA_RSS_URL` alone does not overwrite it.
+Source instances are persisted as validated, non-secret rows in `news.sqlite`. A fresh source store bootstraps one enabled `meduza` source from `MEDUZA_RSS_URL`; after bootstrap, persisted source settings are authoritative. Each source instance has an independent enabled state, checkpoint, and compact last-run status.
 
-Source credentials never belong in SQLite. Source-specific API keys, OAuth secrets, bearer tokens, and passwords remain in the protected process environment. The source service rejects secret-like settings keys so the later admin GUI can safely use the same configuration boundary.
+Credentials never belong in source rows. API keys, OAuth client secrets, bearer tokens, and passwords remain in the protected process environment. The source configuration service is also the intended backend boundary for the next admin GUI.
 
-Until the admin GUI exists, use the scriptable CLI:
+Until that GUI exists, use the CLI:
 
 ```bash
-# Docker deployment
+# inspect configured sources and available types
 docker compose run --rm app sources list
 docker compose run --rm app sources types
 
-# Local source checkout
-npm run dev -- sources list
-npm run dev -- sources types
+# add Reddit subreddits using the convenient shorthand
+docker compose run --rm app sources add reddit selfhosted
+docker compose run --rm app sources add reddit homelab
+
+# edit non-secret settings or toggle a source
+docker compose run --rm app sources update reddit:selfhosted '{"subreddit":"selfhosted","maxDiscoveredPosts":40,"minComments":8,"minScore":5,"maxDiscussionCandidates":4,"allowNsfw":false,"allowedFlairs":[],"excludedFlairs":[],"maxComments":25,"maxCommentDepth":3,"maxCommentChars":1500,"maxDiscussionChars":18000}'
+docker compose run --rm app sources disable reddit:homelab
+docker compose run --rm app sources enable reddit:homelab
 ```
 
-The generic add/enable/disable commands are:
+The generic form remains `sources add <type> <id> '<settings-json>' [display-name]`. Reddit normalizes inputs such as `r/SelfHosted` to the stable source id `reddit:selfhosted` and rejects duplicate normalized instances.
 
-```text
-sources add <type> <id> '<settings-json>' [display-name]
-sources enable <id>
-sources disable <id>
+`EDITORIAL_MAX_PER_SOURCE` limits selection from any one source instance. `EDITORIAL_MAX_DISCUSSIONS` additionally limits discussions across *all* subreddit instances (default `3`) so many Reddit sources cannot crowd news articles out of the edition.
+
+## Reddit discussion ingestion
+
+Reddit uses the authenticated OAuth Data API; RSS/HTML scraping is not the supported discussion path. Register a Reddit API client for the deployment and configure:
+
+```dotenv
+REDDIT_CLIENT_ID=...
+REDDIT_CLIENT_SECRET=...
+REDDIT_USER_AGENT="linux:ai-news-assistant:0.1 (by /u/your_reddit_username)"
 ```
 
-For example, a second Meduza-compatible source instance can be created with `sources add meduza meduza:alternate '{"rssUrl":"https://example.test/feed.xml"}' "Alternate feed"`. Each source instance has its own enabled state, checkpoint, and compact last-run status. Reddit is **not** available yet; Task 14 will register the Reddit source type and its typed settings on this same service/registry.
+Credentials are required only when at least one Reddit source is enabled. The client uses application-only read access, caches the bearer token in memory, sends the descriptive User-Agent on every request, follows bounded timeout/retry behavior, observes `X-Ratelimit-*`/`Retry-After` guidance, and stops rather than waiting beyond `REDDIT_MAX_RATE_LIMIT_WAIT_MS`.
 
-`EDITORIAL_MAX_PER_SOURCE` optionally limits how many selected items may come from one source instance. Its default equals `EDITION_MAX_ARTICLES`, preserving the previous single-Meduza behavior while allowing a tighter cap once multiple sources are enabled.
+Each subreddit discovers its `/new` listing independently from its checkpoint. By default it filters stickied, removed/deleted, NSFW, low-comment, and low-score posts, deterministically ranks the remaining posts for engagement/freshness, then materializes at most five discussion candidates per subreddit. A global `REDDIT_MAX_TOTAL_CANDIDATES=20` bounds thread fetches across all subreddits in one run. Source settings can also restrict/exclude flair and tune post/comment limits.
+
+Thread materialization fetches only a bounded top-comment snapshot. Deleted/removed comments, `more` placeholders, duplicates, and AutoModerator are ignored; commenter usernames are not sent to the LLM. The discussion prompt explicitly treats sampled comments as viewpoints rather than verified facts and warns against inferring consensus from a bounded sample.
+
+Raw Reddit comments and usernames are **not persisted**. The in-memory thread snapshot is used to compute the content hash and analysis, then SQLite stores a discarded-snapshot placeholder plus safe post metadata and the derived analysis. EPUB output shows `r/<subreddit>`, score/comment-count snapshot, discussion summary/takeaways, the original Reddit permalink, and an outbound link when present; `INCLUDE_FULL_ARTICLES` never embeds the raw Reddit snapshot.
+
+The default supported privacy boundary is a local/private LLM such as the gaming-rig endpoint. If `LLM_BASE_URL` appears external, an enabled Reddit source is rejected unless `REDDIT_LLM_TRUST_BOUNDARY=external-acknowledged` is explicitly set. That acknowledgement is an engineering safeguard, not legal advice: operators should re-check current Reddit API/developer terms before forwarding Reddit content to a third-party processor. The application does not use Reddit data for model training/fine-tuning.
+
+`doctor` validates enabled Reddit source settings, required credentials, descriptive User-Agent, and the LLM trust boundary without making a live Reddit request. Authentication failures, forbidden/private/banned or missing communities, and rate limiting are surfaced through per-source run status while failures in one subreddit do not stop other sources.
 
 ## Meduza ingestion
 
@@ -187,9 +206,9 @@ SQLite schema changes are applied as numbered migrations recorded in `schema_mig
 
 Edition membership is stored relationally as well as in the existing edition plan JSON so article/edition lookups can be indexed. Source checkpoints are monotonic and, when a run has failed items, advance only as far as the earliest failed publication timestamp. That keeps failed or undiscovered items eligible for the next RSS run instead of permanently skipping them.
 
-## LLM article analysis
+## LLM content analysis
 
-Per-article analysis uses the same OpenAI-compatible interface for local endpoints with no API key and cloud endpoints with an API key. Model output is parsed as JSON and then validated against a strict runtime schema before it can be persisted. Malformed output and transient/timeout failures are retried with bounded exponential backoff; non-transient request errors fail immediately.
+Article and discussion analysis use the same OpenAI-compatible provider boundary, with separate versioned prompt identities for article and discussion content. Model output is parsed as JSON and then validated against a strict runtime schema before it can be persisted. Malformed output and transient/timeout failures are retried with bounded exponential backoff; non-transient request errors fail immediately.
 
 The article prompt and analysis schema have explicit versions. Cached analysis is reused only when the article content is unchanged and the configured model, prompt version, and analysis version all match. Changing the prompt/schema version therefore deliberately causes re-analysis without changing article storage.
 
@@ -215,6 +234,8 @@ The second-pass editor receives article metadata and validated analyses only: id
 ```dotenv
 EDITION_MAX_ARTICLES=10
 EDITORIAL_MAX_PER_TOPIC=3
+EDITORIAL_MAX_PER_SOURCE=10
+EDITORIAL_MAX_DISCUSSIONS=3
 EDITION_LANGUAGE=ru
 ```
 
@@ -222,7 +243,7 @@ The fallback ranks stories deterministically using importance, recommendation st
 
 ## EPUB rendering
 
-The EPUB renderer builds a newspaper-style hierarchy with a Morning Brief, Top Stories, repeated-topic sections when useful, and Other Headlines for the remaining selected stories. Each story includes source attribution, publication time, estimated reading time, summary, importance context, key points, and the original source URL. `INCLUDE_FULL_ARTICLES` continues to control whether sanitized article text is embedded after the summary.
+The EPUB renderer builds a newspaper-style hierarchy with a Morning Brief, Top Stories, repeated-topic sections when useful, and Other Headlines for the remaining selected items. Articles keep reading-time/full-text behavior. Reddit discussions are labeled with `r/<subreddit>`, engagement metadata, discussion summary/takeaways, Reddit permalink, and optional outbound link; raw discussion snapshots are never embedded even when `INCLUDE_FULL_ARTICLES=true`.
 
 Rendering assets live under `src/rendering/assets/`: monochrome-friendly CSS controls typography and page breaks, while a metadata file supplies the stable author/publisher identity. Every EPUB carries a title, edition date, language, publisher/author, and deterministic `urn:ai-news-assistant:edition:YYYY-MM-DD` identifier. Pandoc is run with `SOURCE_DATE_EPOCH` pinned to the edition date so identical input produces identical EPUB bytes.
 

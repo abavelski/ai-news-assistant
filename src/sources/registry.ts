@@ -10,6 +10,17 @@ import {
   validateMeduzaSettings,
   type MeduzaSettings
 } from "./meduza.js";
+import {
+  RedditCandidateBudget,
+  RedditSource,
+  REDDIT_SETTINGS_VERSION,
+  REDDIT_SOURCE_TYPE,
+  redditMissingRuntimeSecrets,
+  redditRuntimeConfigIssues,
+  redditSourceId,
+  validateRedditSettings,
+  type RedditSettings
+} from "./reddit.js";
 
 export interface SourceTypeDefinition<TSettings extends Record<string, unknown> = Record<string, unknown>> {
   type: string;
@@ -18,8 +29,10 @@ export interface SourceTypeDefinition<TSettings extends Record<string, unknown> 
   settings: SourceTypeDescriptor["settings"];
   secretRequirements: string[];
   validateSettings(value: unknown, settingsVersion: number): TSettings;
+  validateInstance?(config: SourceConfig<TSettings>): void;
   createAdapter(config: SourceConfig<TSettings>, appConfig: AppConfig): SourceAdapter;
   missingRuntimeSecrets?(appConfig: AppConfig): string[];
+  runtimeConfigIssues?(appConfig: AppConfig): string[];
 }
 
 export class SourceRegistry {
@@ -56,7 +69,9 @@ export class SourceRegistry {
     const definition = this.getDefinition(config.type);
     validateNonSecretSettings(config.settings);
     const settings = definition.validateSettings(config.settings, config.settingsVersion);
-    return { ...config, type: definition.type, settings };
+    const validated = { ...config, type: definition.type, settings };
+    definition.validateInstance?.(validated);
+    return validated;
   }
 
   createAdapter(config: SourceConfig, appConfig: AppConfig): SourceAdapter {
@@ -68,6 +83,10 @@ export class SourceRegistry {
         `Source ${validated.id} requires missing protected environment settings: ${missing.join(", ")}.`
       );
     }
+    const issues = definition.runtimeConfigIssues?.(appConfig) ?? [];
+    if (issues.length > 0) {
+      throw new ConfigurationError(`Source ${validated.id} runtime configuration is invalid: ${issues.join(" ")}`);
+    }
     return definition.createAdapter(validated, appConfig);
   }
 
@@ -75,22 +94,72 @@ export class SourceRegistry {
     const validated = this.validateConfig(config);
     return this.getDefinition(validated.type).missingRuntimeSecrets?.(appConfig) ?? [];
   }
+
+  runtimeConfigIssues(config: SourceConfig, appConfig: AppConfig): string[] {
+    const validated = this.validateConfig(config);
+    return this.getDefinition(validated.type).runtimeConfigIssues?.(appConfig) ?? [];
+  }
 }
 
 export function createDefaultSourceRegistry(): SourceRegistry {
-  return new SourceRegistry().register<MeduzaSettings>({
-    type: MEDUZA_SOURCE_TYPE,
-    displayName: "Meduza",
-    settingsVersion: MEDUZA_SETTINGS_VERSION,
-    settings: [{
-      name: "rssUrl",
-      type: "string",
-      required: true,
-      label: "RSS URL",
-      description: "Meduza RSS feed URL used for discovery."
-    }],
-    secretRequirements: [],
-    validateSettings: validateMeduzaSettings,
-    createAdapter: (sourceConfig, appConfig) => new MeduzaSource(appConfig, sourceConfig)
-  });
+  let redditBudget: RedditCandidateBudget | undefined;
+  let redditBudgetLimit: number | undefined;
+  const getRedditBudget = (config: AppConfig): RedditCandidateBudget => {
+    if (!redditBudget || redditBudgetLimit !== config.redditMaxTotalCandidates) {
+      redditBudgetLimit = config.redditMaxTotalCandidates;
+      redditBudget = new RedditCandidateBudget(config.redditMaxTotalCandidates);
+    }
+    return redditBudget;
+  };
+
+  return new SourceRegistry()
+    .register<MeduzaSettings>({
+      type: MEDUZA_SOURCE_TYPE,
+      displayName: "Meduza",
+      settingsVersion: MEDUZA_SETTINGS_VERSION,
+      settings: [{
+        name: "rssUrl",
+        type: "string",
+        required: true,
+        label: "RSS URL",
+        description: "Meduza RSS feed URL used for discovery."
+      }],
+      secretRequirements: [],
+      validateSettings: validateMeduzaSettings,
+      createAdapter: (sourceConfig, appConfig) => new MeduzaSource(appConfig, sourceConfig)
+    })
+    .register<RedditSettings>({
+      type: REDDIT_SOURCE_TYPE,
+      displayName: "Reddit subreddit",
+      settingsVersion: REDDIT_SETTINGS_VERSION,
+      settings: [
+        { name: "subreddit", type: "string", required: true, label: "Subreddit" },
+        { name: "maxDiscoveredPosts", type: "integer", required: true, label: "Maximum posts inspected per run" },
+        { name: "minComments", type: "integer", required: true, label: "Minimum comments" },
+        { name: "minScore", type: "integer", required: true, label: "Minimum score" },
+        { name: "maxDiscussionCandidates", type: "integer", required: true, label: "Maximum discussions materialized" },
+        { name: "allowNsfw", type: "boolean", required: true, label: "Allow NSFW posts" },
+        { name: "allowedFlairs", type: "string-list", required: true, label: "Allowed flairs" },
+        { name: "excludedFlairs", type: "string-list", required: true, label: "Excluded flairs" },
+        { name: "maxComments", type: "integer", required: true, label: "Maximum sampled comments" },
+        { name: "maxCommentDepth", type: "integer", required: true, label: "Maximum comment depth" },
+        { name: "maxCommentChars", type: "integer", required: true, label: "Maximum characters per comment" },
+        { name: "maxDiscussionChars", type: "integer", required: true, label: "Maximum aggregate discussion characters" }
+      ],
+      secretRequirements: ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"],
+      validateSettings: validateRedditSettings,
+      validateInstance: (sourceConfig) => {
+        const expected = redditSourceId(sourceConfig.settings.subreddit);
+        if (sourceConfig.id !== expected) {
+          throw new ConfigurationError(
+            `Reddit source id ${sourceConfig.id} does not match subreddit r/${sourceConfig.settings.subreddit}; expected ${expected}.`
+          );
+        }
+      },
+      missingRuntimeSecrets: redditMissingRuntimeSecrets,
+      runtimeConfigIssues: redditRuntimeConfigIssues,
+      createAdapter: (sourceConfig, appConfig) => new RedditSource(appConfig, sourceConfig, {
+        budget: getRedditBudget(appConfig)
+      })
+    });
 }

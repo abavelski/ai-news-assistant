@@ -10,12 +10,17 @@ export interface EditorialSelectionOptions {
   maxArticles: number;
   maxPerTopic: number;
   maxPerSource?: number;
+  maxDiscussions?: number;
 }
 
 const EXPECTED_FIELDS = new Set(["overview", "selectedArticleIds"]);
 
 function sourceLimit(options: Pick<EditorialSelectionOptions, "maxArticles" | "maxPerSource">): number {
   return options.maxPerSource ?? options.maxArticles;
+}
+
+function discussionLimit(options: Pick<EditorialSelectionOptions, "maxArticles" | "maxDiscussions">): number {
+  return options.maxDiscussions ?? options.maxArticles;
 }
 
 function primaryTopic(item: EditionArticle): string | undefined {
@@ -41,11 +46,9 @@ function jaccard(left: Set<string>, right: Set<string>): number {
 
 export function areNearDuplicateStories(left: EditionArticle, right: EditionArticle): boolean {
   if (left.article.sourceId !== right.article.sourceId) return false;
-
   const leftTitle = wordSet(left.article.title);
   const rightTitle = wordSet(right.article.title);
   if (jaccard(leftTitle, rightTitle) >= 0.72) return true;
-
   const leftSummary = wordSet(left.analysis.summary);
   const rightSummary = wordSet(right.analysis.summary);
   return jaccard(leftSummary, rightSummary) >= 0.82;
@@ -60,7 +63,7 @@ function validationError(issues: string[]): LlmError {
 export function validateEditorialPlan(
   value: unknown,
   items: EditionArticle[],
-  options: Pick<EditorialSelectionOptions, "language" | "maxArticles" | "maxPerTopic" | "maxPerSource">
+  options: Pick<EditorialSelectionOptions, "language" | "maxArticles" | "maxPerTopic" | "maxPerSource" | "maxDiscussions">
 ): EditorialPlan {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw validationError(["editorial plan must be a JSON object"]);
@@ -99,6 +102,8 @@ export function validateEditorialPlan(
   const topicCounts = new Map<string, number>();
   const sourceCounts = new Map<string, number>();
   const maxPerSource = sourceLimit(options);
+  const maxDiscussions = discussionLimit(options);
+  let discussionCount = 0;
 
   for (const [index, rawId] of record.selectedArticleIds.entries()) {
     if (!Number.isSafeInteger(rawId)) {
@@ -120,15 +125,16 @@ export function validateEditorialPlan(
     if (topic) {
       const count = (topicCounts.get(topic) ?? 0) + 1;
       topicCounts.set(topic, count);
-      if (count > options.maxPerTopic) {
-        issues.push(`primary topic ${JSON.stringify(topic)} exceeds limit ${options.maxPerTopic}`);
-      }
+      if (count > options.maxPerTopic) issues.push(`primary topic ${JSON.stringify(topic)} exceeds limit ${options.maxPerTopic}`);
     }
 
     const sourceCount = (sourceCounts.get(item.article.sourceId) ?? 0) + 1;
     sourceCounts.set(item.article.sourceId, sourceCount);
-    if (sourceCount > maxPerSource) {
-      issues.push(`source ${JSON.stringify(item.article.sourceId)} exceeds limit ${maxPerSource}`);
+    if (sourceCount > maxPerSource) issues.push(`source ${JSON.stringify(item.article.sourceId)} exceeds limit ${maxPerSource}`);
+
+    if (item.article.contentKind === "discussion") {
+      discussionCount += 1;
+      if (discussionCount > maxDiscussions) issues.push(`discussion items exceed limit ${maxDiscussions}`);
     }
 
     for (const prior of selected) {
@@ -150,7 +156,7 @@ export function validateEditorialPlan(
 export function parseEditorialPlan(
   raw: string,
   items: EditionArticle[],
-  options: Pick<EditorialSelectionOptions, "language" | "maxArticles" | "maxPerTopic" | "maxPerSource">
+  options: Pick<EditorialSelectionOptions, "language" | "maxArticles" | "maxPerTopic" | "maxPerSource" | "maxDiscussions">
 ): EditorialPlan {
   return validateEditorialPlan(parseJsonObject<Record<string, unknown>>(raw), items, options);
 }
@@ -163,34 +169,25 @@ function freshnessBonus(item: EditionArticle, newestPublishedAt: number): number
 }
 
 export function fallbackEditorialScore(item: EditionArticle, newestPublishedAt: number): number {
-  return item.analysis.importance
-    + (item.analysis.recommended ? 15 : 0)
-    + freshnessBonus(item, newestPublishedAt);
+  return item.analysis.importance + (item.analysis.recommended ? 15 : 0) + freshnessBonus(item, newestPublishedAt);
 }
 
 function fallbackOverview(selected: EditionArticle[], language: string): string {
-  const summaries = selected
-    .slice(0, 4)
-    .map((item) => item.analysis.summary.trim())
-    .filter(Boolean);
+  const summaries = selected.slice(0, 4).map((item) => item.analysis.summary.trim()).filter(Boolean);
   if (!summaries.length) {
     const titles = selected.map((item) => item.article.title.trim()).filter(Boolean);
     return titles.join(". ") || (language.toLocaleLowerCase("und").startsWith("ru") ? "Утренний выпуск." : "Morning edition.");
   }
-
   const body = summaries.join("\n\n");
   return language.toLocaleLowerCase("und").startsWith("ru") ? `Главное к утру:\n\n${body}` : body;
 }
 
 export function deterministicEditorialPlan(
   items: EditionArticle[],
-  options: Pick<EditorialSelectionOptions, "language" | "maxArticles" | "maxPerTopic" | "maxPerSource">
+  options: Pick<EditorialSelectionOptions, "language" | "maxArticles" | "maxPerTopic" | "maxPerSource" | "maxDiscussions">
 ): EditorialPlan {
-  const timestamps = items
-    .map((item) => new Date(item.article.publishedAt).getTime())
-    .filter((value) => Number.isFinite(value));
+  const timestamps = items.map((item) => new Date(item.article.publishedAt).getTime()).filter((value) => Number.isFinite(value));
   const newestPublishedAt = timestamps.length ? Math.max(...timestamps) : Number.NaN;
-
   const ranked = [...items].sort((left, right) => {
     const scoreDifference = fallbackEditorialScore(right, newestPublishedAt) - fallbackEditorialScore(left, newestPublishedAt);
     if (scoreDifference !== 0) return scoreDifference;
@@ -203,16 +200,20 @@ export function deterministicEditorialPlan(
   const topicCounts = new Map<string, number>();
   const sourceCounts = new Map<string, number>();
   const maxPerSource = sourceLimit(options);
+  const maxDiscussions = discussionLimit(options);
+  let discussionCount = 0;
   for (const item of ranked) {
     if (selected.length >= options.maxArticles) break;
     const topic = primaryTopic(item);
     if (topic && (topicCounts.get(topic) ?? 0) >= options.maxPerTopic) continue;
     if ((sourceCounts.get(item.article.sourceId) ?? 0) >= maxPerSource) continue;
+    if (item.article.contentKind === "discussion" && discussionCount >= maxDiscussions) continue;
     if (selected.some((prior) => areNearDuplicateStories(prior, item))) continue;
 
     selected.push(item);
     if (topic) topicCounts.set(topic, (topicCounts.get(topic) ?? 0) + 1);
     sourceCounts.set(item.article.sourceId, (sourceCounts.get(item.article.sourceId) ?? 0) + 1);
+    if (item.article.contentKind === "discussion") discussionCount += 1;
   }
 
   return {
@@ -226,12 +227,7 @@ export async function selectEditorialPlan(
   provider: LlmProvider,
   options: EditorialSelectionOptions
 ): Promise<{ plan: EditorialPlan; metadata: EditorialMetadata }> {
-  const log = logger.child({
-    component: "editorial-selection",
-    modelName: options.modelName,
-    promptVersion: EDITORIAL_PROMPT_VERSION
-  });
-
+  const log = logger.child({ component: "editorial-selection", modelName: options.modelName, promptVersion: EDITORIAL_PROMPT_VERSION });
   try {
     const completion = await provider.complete([
       { role: "system", content: "You are a rigorous personal newspaper editor. Return only JSON when requested." },
@@ -242,28 +238,21 @@ export async function selectEditorialPlan(
           options.language,
           options.maxArticles,
           options.maxPerTopic,
-          sourceLimit(options)
+          sourceLimit(options),
+          discussionLimit(options)
         )
       }
     ]);
     const plan = parseEditorialPlan(completion.content, items, options);
     return {
       plan,
-      metadata: {
-        modelName: options.modelName,
-        promptVersion: EDITORIAL_PROMPT_VERSION,
-        selectionMethod: "llm"
-      }
+      metadata: { modelName: options.modelName, promptVersion: EDITORIAL_PROMPT_VERSION, selectionMethod: "llm" }
     };
   } catch (error) {
     log.warn("editorial model failed; using deterministic fallback", { error });
     return {
       plan: deterministicEditorialPlan(items, options),
-      metadata: {
-        modelName: options.modelName,
-        promptVersion: EDITORIAL_PROMPT_VERSION,
-        selectionMethod: "fallback"
-      }
+      metadata: { modelName: options.modelName, promptVersion: EDITORIAL_PROMPT_VERSION, selectionMethod: "fallback" }
     };
   }
 }

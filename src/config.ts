@@ -13,11 +13,22 @@ export interface AppConfig {
   editionMaxArticles: number;
   editorialMaxPerTopic: number;
   editorialMaxPerSource: number;
+  editorialMaxDiscussions: number;
   editionLanguage: string;
   includeFullArticles: boolean;
   editionRetentionDays: number;
   buildRetentionDays: number;
   meduzaRssUrl: string;
+  redditClientId?: string;
+  redditClientSecret?: string;
+  redditUserAgent: string;
+  redditHttpTimeoutMs: number;
+  redditHttpRetries: number;
+  redditRetryBaseDelayMs: number;
+  redditMaxResponseBytes: number;
+  redditMaxRateLimitWaitMs: number;
+  redditMaxTotalCandidates: number;
+  redditLlmTrustBoundary: "local" | "external-acknowledged";
   httpUserAgent: string;
   httpTimeoutMs: number;
   httpRetries: number;
@@ -82,6 +93,16 @@ function booleanEnv(env: Environment, name: string, fallback: boolean): boolean 
   throw new ConfigurationError(`${name} must be one of true/false, 1/0, yes/no, or on/off; received ${JSON.stringify(raw)}.`);
 }
 
+function redditTrustBoundaryEnv(env: Environment): "local" | "external-acknowledged" {
+  const value = readOptional(env, "REDDIT_LLM_TRUST_BOUNDARY") ?? "local";
+  if (value !== "local" && value !== "external-acknowledged") {
+    throw new ConfigurationError(
+      `REDDIT_LLM_TRUST_BOUNDARY must be local or external-acknowledged; received ${JSON.stringify(value)}.`
+    );
+  }
+  return value;
+}
+
 function httpUrlEnv(env: Environment, name: string, fallback: string): string {
   const raw = nonEmptyEnv(env, name, fallback);
   let parsed: URL;
@@ -123,20 +144,9 @@ export function parseConfig(env: Environment = process.env): AppConfig {
   const outputDirRaw = nonEmptyEnv(env, "OUTPUT_DIR", path.join(dataDir, "public", "daily"));
   const maxArticles = integerEnv(env, "MAX_ARTICLES", 50, 1, 1000);
   const editionMaxArticles = integerEnv(env, "EDITION_MAX_ARTICLES", 10, 1, 1000);
-  const editorialMaxPerTopic = integerEnv(
-    env,
-    "EDITORIAL_MAX_PER_TOPIC",
-    Math.min(3, editionMaxArticles),
-    1,
-    1000
-  );
-  const editorialMaxPerSource = integerEnv(
-    env,
-    "EDITORIAL_MAX_PER_SOURCE",
-    editionMaxArticles,
-    1,
-    1000
-  );
+  const editorialMaxPerTopic = integerEnv(env, "EDITORIAL_MAX_PER_TOPIC", Math.min(3, editionMaxArticles), 1, 1000);
+  const editorialMaxPerSource = integerEnv(env, "EDITORIAL_MAX_PER_SOURCE", editionMaxArticles, 1, 1000);
+  const editorialMaxDiscussions = integerEnv(env, "EDITORIAL_MAX_DISCUSSIONS", Math.min(3, editionMaxArticles), 0, 1000);
 
   if (editionMaxArticles > maxArticles) {
     throw new ConfigurationError(
@@ -153,6 +163,11 @@ export function parseConfig(env: Environment = process.env): AppConfig {
       `EDITORIAL_MAX_PER_SOURCE (${editorialMaxPerSource}) must not exceed EDITION_MAX_ARTICLES (${editionMaxArticles}).`
     );
   }
+  if (editorialMaxDiscussions > editionMaxArticles) {
+    throw new ConfigurationError(
+      `EDITORIAL_MAX_DISCUSSIONS (${editorialMaxDiscussions}) must not exceed EDITION_MAX_ARTICLES (${editionMaxArticles}).`
+    );
+  }
 
   return {
     dataDir,
@@ -164,11 +179,22 @@ export function parseConfig(env: Environment = process.env): AppConfig {
     editionMaxArticles,
     editorialMaxPerTopic,
     editorialMaxPerSource,
+    editorialMaxDiscussions,
     editionLanguage: nonEmptyEnv(env, "EDITION_LANGUAGE", "ru"),
     includeFullArticles: booleanEnv(env, "INCLUDE_FULL_ARTICLES", true),
     editionRetentionDays: integerEnv(env, "EDITION_RETENTION_DAYS", 30, 1, 3650),
     buildRetentionDays: integerEnv(env, "BUILD_RETENTION_DAYS", 7, 1, 3650),
     meduzaRssUrl: httpUrlEnv(env, "MEDUZA_RSS_URL", "https://meduza.io/rss/all"),
+    redditClientId: readOptional(env, "REDDIT_CLIENT_ID") || undefined,
+    redditClientSecret: readOptional(env, "REDDIT_CLIENT_SECRET") || undefined,
+    redditUserAgent: readOptional(env, "REDDIT_USER_AGENT") ?? "",
+    redditHttpTimeoutMs: integerEnv(env, "REDDIT_HTTP_TIMEOUT_MS", 20_000, 1_000, 120_000),
+    redditHttpRetries: integerEnv(env, "REDDIT_HTTP_RETRIES", 2, 0, 10),
+    redditRetryBaseDelayMs: integerEnv(env, "REDDIT_RETRY_BASE_DELAY_MS", 500, 0, 30_000),
+    redditMaxResponseBytes: integerEnv(env, "REDDIT_MAX_RESPONSE_BYTES", 2_000_000, 10_000, 20_000_000),
+    redditMaxRateLimitWaitMs: integerEnv(env, "REDDIT_MAX_RATE_LIMIT_WAIT_MS", 60_000, 0, 600_000),
+    redditMaxTotalCandidates: integerEnv(env, "REDDIT_MAX_TOTAL_CANDIDATES", 20, 1, 200),
+    redditLlmTrustBoundary: redditTrustBoundaryEnv(env),
     httpUserAgent: nonEmptyEnv(env, "HTTP_USER_AGENT", "ai-news-assistant/0.1 (+personal self-hosted reader)"),
     httpTimeoutMs: integerEnv(env, "HTTP_TIMEOUT_MS", 20_000, 1_000, 120_000),
     httpRetries: integerEnv(env, "HTTP_RETRIES", 2, 0, 10),
